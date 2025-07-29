@@ -75,3 +75,30 @@ def register_ddl_tools(mcp: FastMCP):
             return f"DDL statement executed successfully: {sql_statement[:100]}..."
         except Exception as e:
             return f"Error executing DDL statement: {str(e)}"
+
+        @mcp.tool
+        def create_kafka_table(name: str, columns: str, topic: str) -> str:
+            """
+            Create a table in RisingWave, storing the streaming data from kafka into RisingWave
+    
+            Args:
+                name: Name of the table
+                columns: Schema/columns of the table (e.g., "id INT, name VARCHAR, timestamp TIMESTAMP")
+                topic: Name of kafka topic being sourced from
+    
+            Returns:
+                Success or error message
+            """
+            rw = setup_risingwave_connection()
+            try:
+                query = f"""CREATE TABLE IF NOT EXISTS {name} (
+                {columns}
+                ) WITH (
+                    connector='kafka',
+                    topic='{topic}',
+                    properties.bootstrap.server='localhost:9092'
+                ) FORMAT PLAIN ENCODE JSON;"""
+                rw.execute(query)
+                return f"Kafka table '{name}' created successfully for topic '{topic}'"
+            except Exception as e:
+                return f"Error creating table '{name}': {str(e)}"
