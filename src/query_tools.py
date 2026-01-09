@@ -1,5 +1,6 @@
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+import json
 
 
 def run_select_query(query: str) -> str:
@@ -10,7 +11,7 @@ def run_select_query(query: str) -> str:
         query: The SELECT SQL query to execute (must start with SELECT)
 
     Returns:
-        Query results as a formatted string
+        Query results as a JSON-formatted string
     """
     query_upper = query.strip().upper()
     if not query_upper.startswith('SELECT'):
@@ -18,8 +19,12 @@ def run_select_query(query: str) -> str:
             "Only SELECT queries are allowed for security reasons")
 
     rw = setup_risingwave_connection()
-    result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-    return result
+    try:
+        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+        records = result.to_dict(orient='records')
+        return json.dumps(records, default=str, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"Error executing SELECT query: {str(e)}"
 
 
 def table_row_count(table_name: str) -> str:
@@ -30,12 +35,16 @@ def table_row_count(table_name: str) -> str:
         table_name: Name of the table
 
     Returns:
-        Row count as a string
+        Row count as a JSON-formatted string
     """
     rw = setup_risingwave_connection()
     query = f"SELECT COUNT(*) as row_count FROM {table_name}"
-    result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-    return result
+    try:
+        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+        records = result.to_dict(orient='records')
+        return json.dumps(records, default=str, ensure_ascii=False)
+    except Exception as e:
+        return f"Error getting row count for table {table_name}: {str(e)}"
 
 
 def get_table_stats(table_name: str, schema_name: str = "public") -> str:
@@ -61,7 +70,10 @@ def get_table_stats(table_name: str, schema_name: str = "public") -> str:
     FROM information_schema.columns 
     WHERE table_name = '{table_name}' AND table_schema = '{schema_name}'
     """
-    column_info = rw.fetchone(column_query, format=OutputFormat.DATAFRAME)
+    try:
+        column_info = rw.fetchone(column_query, format=OutputFormat.DATAFRAME)
+    except Exception as e:
+        return f"Error getting column info for table {table_name}: {str(e)}"
 
     stats = {
         "table": f"{schema_name}.{table_name}",

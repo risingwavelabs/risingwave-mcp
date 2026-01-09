@@ -13,7 +13,7 @@ def explain_analyze(query: str) -> str:
         query: The SQL query to analyze streaming job (TABLE, MATERIALIZED VIEW, SINK, INDEX, or ID)
 
     Returns:
-        Query execution plan with actual statistics
+        Query execution plan with detailed runtime statistics
     """
     query_upper = query.strip().upper()
     allowed_keywords = ["TABLE", "MATERIALIZED VIEW", "SINK", "INDEX"]
@@ -26,7 +26,7 @@ def explain_analyze(query: str) -> str:
     try:
         explain_query = f"EXPLAIN ANALYZE {query}"
         result = rw.fetch(explain_query, format=OutputFormat.DATAFRAME)
-        return result
+        return result.to_json()
     except Exception as e:
         return f"Error executing EXPLAIN ANALYZE: {str(e)}"
 
@@ -42,7 +42,7 @@ def explain_query(query: str) -> str:
         query: The SQL query to explain (SELECT, INSERT, UPDATE, DELETE)
 
     Returns:
-        Query execution plan with estimated statistics
+        Query execution plan
     """
     query_upper = query.strip().upper()
     allowed_queries = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'WITH']
@@ -59,6 +59,6 @@ def explain_query(query: str) -> str:
     try:
         explain_query = f"EXPLAIN {query}"
         result = rw.fetch(explain_query, format=OutputFormat.DATAFRAME)
-        return result
+        return result.to_json()
     except Exception as e:
         return f"Error executing EXPLAIN: {str(e)}"

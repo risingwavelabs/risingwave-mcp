@@ -10,15 +10,21 @@ def register_schema_tools(mcp: FastMCP):
     def show_tables() -> str:
         """List all tables in the database."""
         rw = setup_risingwave_connection()
-        result = rw.fetch("SHOW TABLES", format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch("SHOW TABLES", format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error listing tables: {str(e)}"
 
     @mcp.tool
     def list_databases() -> str:
         """List all databases in the RisingWave cluster."""
         rw = setup_risingwave_connection()
-        result = rw.fetch("SHOW DATABASES", format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch("SHOW DATABASES", format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error listing databases: {str(e)}" 
 
     @mcp.tool
     def describe_table(table_name: str) -> str:
@@ -33,8 +39,11 @@ def register_schema_tools(mcp: FastMCP):
         """
         rw = setup_risingwave_connection()
         query = f"DESCRIBE {table_name}"
-        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error describing table {table_name}: {str(e)}"
 
     @mcp.tool
     def describe_materialized_view(mv_name: str) -> str:
@@ -49,8 +58,11 @@ def register_schema_tools(mcp: FastMCP):
         """
         rw = setup_risingwave_connection()
         query = f"DESCRIBE {mv_name}"
-        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error describing materialized view {mv_name}: {str(e)}"
 
     @mcp.tool
     def show_create_table(table_name: str) -> str:
@@ -65,8 +77,11 @@ def register_schema_tools(mcp: FastMCP):
         """
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE TABLE {table_name}"
-        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error showing create table for {table_name}: {str(e)}"
 
     @mcp.tool
     def show_create_materialized_view(mv_name: str) -> str:
@@ -81,8 +96,11 @@ def register_schema_tools(mcp: FastMCP):
         """
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE MATERIALIZED VIEW {mv_name}"
-        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error showing create materialized view for {mv_name}: {str(e)}"
 
     @mcp.tool
     def check_table_exists(table_name: str, schema_name: str = "public") -> str:
@@ -97,8 +115,11 @@ def register_schema_tools(mcp: FastMCP):
             Boolean result as string indicating if table exists
         """
         rw = setup_risingwave_connection()
-        exists = rw.check_exist(name=table_name, schema_name=schema_name)
-        return f"Table '{table_name}' in schema '{schema_name}' exists: {exists}"
+        try:
+            exists = rw.check_exist(name=table_name, schema_name=schema_name)
+            return f"Table '{table_name}' in schema '{schema_name}' exists: {exists}"
+        except Exception as e:
+            return f"Error checking if table exists: {str(e)}"
 
     @mcp.tool
     def list_schemas() -> str:
@@ -109,9 +130,12 @@ def register_schema_tools(mcp: FastMCP):
             List of schemas as a formatted string
         """
         rw = setup_risingwave_connection()
-        result = rw.fetch(
-            "SELECT schema_name FROM information_schema.schemata", format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch(
+                "SELECT schema_name FROM information_schema.schemata", format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error listing schemas: {str(e)}"
 
     @mcp.tool
     def list_materialized_views() -> str:
@@ -126,8 +150,11 @@ def register_schema_tools(mcp: FastMCP):
         """
         rw = setup_risingwave_connection()
         query = "SHOW MATERIALIZED VIEWS"
-        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error listing materialized views: {str(e)}"
 
     @mcp.tool
     def get_table_columns(table_name: str, schema_name: str = "public") -> str:
@@ -148,8 +175,11 @@ def register_schema_tools(mcp: FastMCP):
         WHERE table_name = '{table_name}' AND table_schema = '{schema_name}'
         ORDER BY ordinal_position
         """
-        result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting table columns for {table_name}: {str(e)}"
 
     @mcp.tool
     def list_subscriptions(schema_name: str = "public") -> str:
@@ -166,7 +196,7 @@ def register_schema_tools(mcp: FastMCP):
         query = f"SHOW SUBSCRIPTIONS FROM {schema_name}"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-            return result
+            return result.to_json()
         except Exception as e:
             return f"Error listing subscriptions: {str(e)}"
 
@@ -190,6 +220,40 @@ def register_schema_tools(mcp: FastMCP):
         """
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-            return result
+            return result.to_json()
         except Exception as e:
             return f"Error getting table privileges: {str(e)}"
+        
+    @mcp.tool
+    def list_sinks() -> str:
+        """
+        List all sinks in the RisingWave database.
+
+        Returns:
+            List of sinks as a formatted string
+        """
+        rw = setup_risingwave_connection()
+        query = "SHOW SINKS"
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error listing sinks: {str(e)}"
+        
+    @mcp.tool
+    def show_create_sink(sink_name: str) -> str:
+        """
+        Show the CREATE SINK statement for a specific sink.
+
+        Args:
+            sink_name: Name of the sink
+        Returns:
+            CREATE SINK statement
+        """
+        rw = setup_risingwave_connection()
+        query = f"SHOW CREATE SINK {sink_name}"
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error showing create sink: {str(e)}"
