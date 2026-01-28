@@ -15,8 +15,11 @@ def register_management_tools(mcp: FastMCP):
             Database version information
         """
         rw = setup_risingwave_connection()
-        result = rw.fetchone("SELECT version()", format=OutputFormat.DATAFRAME)
-        return result
+        try:
+            result = rw.fetchone("SELECT version()", format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting database version: {str(e)}"
 
     @mcp.tool
     def show_running_queries() -> str:
@@ -31,7 +34,7 @@ def register_management_tools(mcp: FastMCP):
             # This may not be available in all RisingWave versions
             result = rw.fetch("SHOW PROCESSLIST",
                               format=OutputFormat.DATAFRAME)
-            return result
+            return result.to_json()
         except Exception as e:
             return f"Show running queries not supported or error occurred: {str(e)}"
 
