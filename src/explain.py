@@ -62,3 +62,41 @@ def explain_query(query: str) -> str:
         return result.to_json()
     except Exception as e:
         return f"Error executing EXPLAIN: {str(e)}"
+
+
+def explain_distsql(statement: str, verbose: bool = False) -> str:
+    """
+    Execute EXPLAIN (DISTSQL) on a streaming statement to get the distributed execution plan.
+
+    This shows the distributed query plan with state information, useful for understanding
+    how streaming jobs are executed across the cluster. Use this for CREATE MATERIALIZED VIEW,
+    CREATE SINK, or other streaming DDL statements.
+
+    Args:
+        statement: The streaming SQL statement (e.g., CREATE MATERIALIZED VIEW mv AS SELECT ...)
+        verbose: If True, include additional details like stream keys (default: False)
+
+    Returns:
+        Distributed execution plan with state table information
+    """
+    statement_upper = statement.strip().upper()
+
+    # Allow CREATE statements for streaming jobs
+    allowed_prefixes = ['CREATE MATERIALIZED VIEW', 'CREATE SINK', 'CREATE INDEX',
+                        'CREATE TABLE', 'SELECT', 'WITH']
+
+    if not any(statement_upper.startswith(prefix) for prefix in allowed_prefixes):
+        raise ValueError(
+            "Only CREATE MATERIALIZED VIEW, CREATE SINK, CREATE INDEX, CREATE TABLE, "
+            "SELECT, or WITH statements are allowed for EXPLAIN (DISTSQL)")
+
+    rw = setup_risingwave_connection()
+    try:
+        if verbose:
+            explain_stmt = f"EXPLAIN (DISTSQL, VERBOSE) {statement}"
+        else:
+            explain_stmt = f"EXPLAIN (DISTSQL) {statement}"
+        result = rw.fetch(explain_stmt, format=OutputFormat.DATAFRAME)
+        return result.to_json()
+    except Exception as e:
+        return f"Error executing EXPLAIN (DISTSQL): {str(e)}"

@@ -840,3 +840,64 @@ def register_streaming_tools(mcp: FastMCP):
             return result.to_json()
         except Exception as e:
             return f"Error getting upstream dependents: {str(e)}"
+
+    # ==================== Sink Decouple Tools ====================
+
+    @mcp.tool
+    def get_sink_decouple_status() -> str:
+        """
+        Check whether sinks are decoupled or not.
+        Decoupled sinks have separate log stores for better performance isolation.
+
+        Returns:
+            All sinks with their decouple status, connector type, and vnode count.
+        """
+        rw = setup_risingwave_connection()
+        query = """
+        SELECT d.sink_id,
+               d.is_decouple,
+               d.watermark_vnode_count,
+               s.name,
+               s.connector,
+               s.sink_type
+        FROM rw_catalog.rw_sink_decouple d
+        JOIN rw_catalog.rw_sinks s ON d.sink_id = s.id
+        ORDER BY s.name
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting sink decouple status: {str(e)}"
+
+    @mcp.tool
+    def get_sink_logstore_lag(internal_table_name: str) -> str:
+        """
+        Monitor the lag of a decoupled sink by querying its internal log store table.
+        This is useful for monitoring sink health and backpressure.
+
+        To find the internal table name, use get_internal_tables() for the sink.
+        The internal table name typically follows the pattern:
+        __internal_<schema>_<sink_id>_sink_<number>
+
+        Args:
+            internal_table_name: Name of the sink's internal log store table.
+
+        Returns:
+            The lag duration from the oldest unprocessed record.
+        """
+        rw = setup_risingwave_connection()
+        # The kv_log_store_epoch column stores the epoch timestamp
+        # Epoch format: upper bits contain timestamp info
+        # RisingWave epoch base time: 2021-04-01 00:00:00 UTC (1617235200)
+        query = f"""
+        SELECT (now() - to_timestamp(((kv_log_store_epoch >> 16) & 70368744177663) / 1000 + 1617235200)) AS lag
+        FROM {internal_table_name}
+        ORDER BY kv_log_store_epoch ASC
+        LIMIT 1
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting sink logstore lag: {str(e)}"
