@@ -6,6 +6,7 @@ from schema_tools import register_schema_tools
 from ddl_tools import register_ddl_tools
 from dml_tools import register_dml_tools
 from management_tools import register_management_tools
+from streaming_tools import register_streaming_tools
 
 mcp = FastMCP("Risingwave MCP Server")
 
@@ -22,6 +23,7 @@ def register_tools():
     register_ddl_tools(mcp)
     register_dml_tools(mcp)
     register_management_tools(mcp)
+    register_streaming_tools(mcp)
 
 
 if __name__ == "__main__":
