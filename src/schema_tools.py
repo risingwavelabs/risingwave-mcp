@@ -138,7 +138,7 @@ def register_schema_tools(mcp: FastMCP):
             return f"Error listing schemas: {str(e)}"
 
     @mcp.tool
-    def list_materialized_views() -> str:
+    def list_materialized_views(schema_name: str = "public") -> str:
         """
         List all materialized views in a specific schema.
 
@@ -149,7 +149,7 @@ def register_schema_tools(mcp: FastMCP):
             List of materialized views
         """
         rw = setup_risingwave_connection()
-        query = "SHOW MATERIALIZED VIEWS"
+        query = f"SHOW MATERIALIZED VIEWS FROM {schema_name}"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()
