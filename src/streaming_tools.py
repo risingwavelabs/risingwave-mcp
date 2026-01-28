@@ -576,3 +576,267 @@ def register_streaming_tools(mcp: FastMCP):
             return result.to_json()
         except Exception as e:
             return f"Error getting downstream fragments: {str(e)}"
+
+    # ==================== State Table and Parallelism Tools ====================
+
+    @mcp.tool
+    def get_fragments_by_state_table(state_table_id: int) -> str:
+        """
+        Find fragments that use a specific state table.
+        State tables are internal storage for streaming operators (joins, aggregations).
+
+        Args:
+            state_table_id: The state table ID to look up.
+
+        Returns:
+            List of fragments using this state table with their actor counts.
+        """
+        rw = setup_risingwave_connection()
+        query = f"""
+        SELECT rf.fragment_id, rf.table_id, rf.flags, rf.parallelism,
+               count(ra.actor_id) as actor_count
+        FROM rw_fragments rf
+        JOIN rw_actors ra ON rf.fragment_id = ra.fragment_id
+        WHERE {state_table_id} = ANY(rf.state_table_ids)
+        GROUP BY rf.fragment_id, rf.table_id, rf.flags, rf.parallelism
+        ORDER BY rf.fragment_id
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting fragments by state table: {str(e)}"
+
+    @mcp.tool
+    def get_streaming_parallelism() -> str:
+        """
+        Get an overview of parallelism settings for all streaming jobs.
+
+        Returns:
+            Parallelism information for all streaming jobs.
+        """
+        rw = setup_risingwave_connection()
+        query = """
+        SELECT * FROM rw_streaming_parallelism
+        ORDER BY name
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting streaming parallelism: {str(e)}"
+
+    @mcp.tool
+    def get_mv_worker_distribution(mv_name: str) -> str:
+        """
+        Get the distribution of actors across worker nodes for a materialized view.
+        Useful for checking load balance across compute nodes.
+
+        Args:
+            mv_name: Name of the materialized view.
+
+        Returns:
+            Worker nodes with their actor counts for this MV.
+        """
+        rw = setup_risingwave_connection()
+        query = f"""
+        SELECT w.id as worker_id, w.host, count(a.actor_id) as actor_count
+        FROM rw_fragments f
+        JOIN rw_materialized_views m ON f.table_id = m.id
+        JOIN rw_actors a ON f.fragment_id = a.fragment_id
+        JOIN rw_worker_nodes w ON a.worker_id = w.id
+        WHERE m.name = '{mv_name}'
+        GROUP BY w.id, w.host
+        ORDER BY actor_count DESC
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting MV worker distribution: {str(e)}"
+
+    @mcp.tool
+    def get_job_by_state_table_id(state_table_id: int) -> str:
+        """
+        Find the streaming job (MV, table, sink, or source) that owns a state table.
+        Useful for debugging when you see state table IDs in logs or metrics.
+
+        Args:
+            state_table_id: The state table ID to look up.
+
+        Returns:
+            The streaming job information including schema, name, and job type.
+        """
+        rw = setup_risingwave_connection()
+        query = f"""
+        WITH t AS (
+            SELECT table_id
+            FROM rw_fragments
+            WHERE array_position(state_table_ids, {state_table_id}) IS NOT NULL
+        ),
+        jobs AS (
+            SELECT schema_id, id, name, 'materialized view' AS job_type FROM rw_materialized_views
+            UNION ALL
+            SELECT schema_id, id, name, 'table' AS job_type FROM rw_tables
+            UNION ALL
+            SELECT schema_id, id, name, 'sink' AS job_type FROM rw_sinks
+            UNION ALL
+            SELECT schema_id, id, name, 'source' AS job_type FROM rw_sources
+        )
+        SELECT s.name AS schema_name, jobs.name AS job_name, jobs.job_type, jobs.id AS job_id
+        FROM t
+        JOIN jobs ON t.table_id = jobs.id
+        JOIN rw_schemas s ON s.id = jobs.schema_id
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting job by state table ID: {str(e)}"
+
+    # ==================== Internal Tables Tools ====================
+
+    @mcp.tool
+    def get_internal_tables(job_name: str = None, job_id: int = None, schema_name: str = "public") -> str:
+        """
+        Get all internal state tables for a streaming job.
+        Internal tables store state for operators like joins, aggregations, etc.
+
+        Args:
+            job_name: Name of the streaming job (optional if job_id is provided).
+            job_id: ID of the streaming job (optional if job_name is provided).
+            schema_name: Schema name (default: "public"), used with job_name.
+
+        Returns:
+            List of internal tables with their details.
+        """
+        rw = setup_risingwave_connection()
+
+        if job_id is not None:
+            query = f"""
+            SELECT * FROM rw_internal_table_info
+            WHERE job_id = {job_id}
+            ORDER BY id
+            """
+        elif job_name is not None:
+            query = f"""
+            SELECT * FROM rw_internal_table_info
+            WHERE job_name = '{job_name}' AND schema_name = '{schema_name}'
+            ORDER BY id
+            """
+        else:
+            return "Error: Either job_name or job_id must be provided"
+
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting internal tables: {str(e)}"
+
+    # ==================== Data Distribution Tools ====================
+
+    @mcp.tool
+    def check_vnode_distribution(table_name: str, distribution_key: str) -> str:
+        """
+        Check vnode distribution for a table to detect data skew.
+        WARNING: This performs a full table scan and can be heavy on large tables.
+
+        Args:
+            table_name: Name of the table to check.
+            distribution_key: The column used as distribution key.
+
+        Returns:
+            Vnode distribution showing count per vnode.
+        """
+        rw = setup_risingwave_connection()
+        # rw_vnode requires (vnode_count, distribution_keys...)
+        # Default vnode count in RisingWave is 256
+        query = f"""
+        SELECT rw_vnode(256, {distribution_key}) as vnode, count(*) as row_count
+        FROM {table_name}
+        GROUP BY vnode
+        ORDER BY row_count DESC
+        LIMIT 100
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error checking vnode distribution: {str(e)}"
+
+    # ==================== Dependency Graph Tools ====================
+
+    @mcp.tool
+    def get_downstream_dependents(object_name: str) -> str:
+        """
+        Find all materialized views that depend on a given table or MV.
+        Useful for impact analysis before modifying or dropping an object.
+
+        Args:
+            object_name: Name of the table or materialized view.
+
+        Returns:
+            List of dependent materialized views with their definitions.
+        """
+        rw = setup_risingwave_connection()
+        query = f"""
+        WITH obj_oid AS (
+            SELECT oid FROM pg_class WHERE relname = '{object_name}'
+        ),
+        dependent_oids AS (
+            SELECT d.objid AS mv_oid
+            FROM rw_depend d
+            JOIN obj_oid o ON d.refobjid = o.oid
+        )
+        SELECT m.id, s.name AS schema_name, m.name, m.owner, m.definition
+        FROM rw_materialized_views m
+        JOIN dependent_oids d ON m.id = d.mv_oid
+        JOIN rw_schemas s ON m.schema_id = s.id
+        ORDER BY m.name
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting downstream dependents: {str(e)}"
+
+    @mcp.tool
+    def get_upstream_dependents(mv_name: str) -> str:
+        """
+        Find all tables and materialized views that a given MV depends on.
+        Useful for understanding data lineage.
+
+        Args:
+            mv_name: Name of the materialized view.
+
+        Returns:
+            List of upstream tables and MVs with their definitions.
+        """
+        rw = setup_risingwave_connection()
+        query = f"""
+        WITH mv_oid AS (
+            SELECT oid FROM pg_class WHERE relname = '{mv_name}'
+        ),
+        upstream_oids AS (
+            SELECT d.refobjid AS obj_oid
+            FROM rw_depend d
+            JOIN mv_oid m ON d.objid = m.oid
+        )
+        SELECT 'materialized view' AS object_type, m.id, s.name AS schema_name,
+               m.name, m.definition
+        FROM rw_materialized_views m
+        JOIN upstream_oids u ON m.id = u.obj_oid
+        JOIN rw_schemas s ON m.schema_id = s.id
+        UNION ALL
+        SELECT 'table' AS object_type, t.id, s.name AS schema_name,
+               t.name, t.definition
+        FROM rw_tables t
+        JOIN upstream_oids u ON t.id = u.obj_oid
+        JOIN rw_schemas s ON t.schema_id = s.id
+        ORDER BY object_type, name
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting upstream dependents: {str(e)}"
