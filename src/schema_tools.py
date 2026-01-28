@@ -257,3 +257,57 @@ def register_schema_tools(mcp: FastMCP):
             return result.to_json()
         except Exception as e:
             return f"Error showing create sink: {str(e)}"
+
+    @mcp.tool
+    def get_relation_info(relation_name: str) -> str:
+        """
+        Get information about a relation (table, MV, source, sink, etc.) by name.
+        Useful when you don't know what type of object it is.
+
+        Args:
+            relation_name: Name of the relation to look up.
+
+        Returns:
+            Relation info including schema, type, definition, and timestamps.
+        """
+        rw = setup_risingwave_connection()
+        # Note: Excludes 'definition' and 'fragments' columns as they can be very large
+        # Use show_create_table/show_create_materialized_view for full definitions
+        query = f"""
+        SELECT relationid,
+               schemaname,
+               relationname,
+               relationtype,
+               relationowner,
+               relationtimezone,
+               initialized_at,
+               created_at,
+               initialized_at_cluster_version,
+               created_at_cluster_version
+        FROM rw_catalog.rw_relation_info
+        WHERE relationname = '{relation_name}'
+        """
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error getting relation info: {str(e)}"
+
+    @mcp.tool
+    def show_create_source(source_name: str) -> str:
+        """
+        Show the CREATE SOURCE statement for a specific source.
+
+        Args:
+            source_name: Name of the source
+
+        Returns:
+            CREATE SOURCE statement
+        """
+        rw = setup_risingwave_connection()
+        query = f"SHOW CREATE SOURCE {source_name}"
+        try:
+            result = rw.fetch(query, format=OutputFormat.DATAFRAME)
+            return result.to_json()
+        except Exception as e:
+            return f"Error showing create source: {str(e)}"
