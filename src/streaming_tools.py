@@ -72,7 +72,7 @@ def register_streaming_tools(mcp: FastMCP):
         SELECT
             count(*) as total_fragments,
             sum(parallelism) as total_parallelism,
-            avg(parallelism)::numeric(10,2) as avg_parallelism,
+            avg(parallelism) as avg_parallelism,
             max(parallelism) as max_parallelism,
             min(parallelism) as min_parallelism
         FROM rw_fragments
