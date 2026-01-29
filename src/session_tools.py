@@ -3,6 +3,22 @@ from risingwave import OutputFormat
 from connection import setup_risingwave_connection
 
 
+def _escape_sql_string(value: str) -> str:
+    """
+    Escape a string value for safe use in SQL statements.
+
+    This escapes single quotes by doubling them, which is the standard
+    SQL escaping mechanism for string literals.
+
+    Args:
+        value: The string value to escape
+
+    Returns:
+        The escaped string (without surrounding quotes)
+    """
+    return value.replace("'", "''")
+
+
 def register_session_tools(mcp: FastMCP):
     """Register all session variable MCP tools"""
 
@@ -42,9 +58,9 @@ def register_session_tools(mcp: FastMCP):
             if value.upper() == "DEFAULT":
                 query = f"SET {variable_name} TO DEFAULT"
             else:
-                # Use parameterized-style quoting for the value
-                # For most values, we need to quote them
-                query = f"SET {variable_name} TO '{value}'"
+                # Escape single quotes to prevent SQL injection
+                escaped_value = _escape_sql_string(value)
+                query = f"SET {variable_name} TO '{escaped_value}'"
 
             rw.execute(query)
             return f"Successfully set {variable_name} to {value}"
@@ -116,7 +132,9 @@ def register_session_tools(mcp: FastMCP):
             if value.upper() == "DEFAULT":
                 query = f"ALTER SYSTEM SET {variable_name} TO DEFAULT"
             else:
-                query = f"ALTER SYSTEM SET {variable_name} TO '{value}'"
+                # Escape single quotes to prevent SQL injection
+                escaped_value = _escape_sql_string(value)
+                query = f"ALTER SYSTEM SET {variable_name} TO '{escaped_value}'"
 
             rw.execute(query)
             return f"Successfully altered system default for {variable_name} to {value}. This will apply to new sessions."
