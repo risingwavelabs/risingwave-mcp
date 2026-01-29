@@ -305,3 +305,109 @@ class TestIcebergTools:
 
         result = vacuum("iceberg_table")
         assert "completed successfully" in result or "Error" in result
+
+    def test_get_iceberg_snapshots(self, mock_connection):
+        from iceberg_tools import register_iceberg_tools
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        register_iceberg_tools(mcp)
+
+        get_snapshots = get_tool_fn(mcp, "get_iceberg_snapshots")
+        assert get_snapshots is not None
+
+        result = get_snapshots("my_iceberg_source")
+        assert isinstance(result, str)
+
+    def test_get_iceberg_snapshots_invalid_name(self, mock_connection):
+        from iceberg_tools import register_iceberg_tools
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        register_iceberg_tools(mcp)
+
+        get_snapshots = get_tool_fn(mcp, "get_iceberg_snapshots")
+        result = get_snapshots("invalid; DROP TABLE")
+        assert "Invalid source name" in result
+
+    def test_query_iceberg_time_travel_timestamp(self, mock_connection):
+        from iceberg_tools import register_iceberg_tools
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        register_iceberg_tools(mcp)
+
+        time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
+        assert time_travel is not None
+
+        result = time_travel(
+            "my_source",
+            "SELECT * FROM my_source",
+            timestamp="2024-01-01 12:00:00"
+        )
+        assert isinstance(result, str)
+
+    def test_query_iceberg_time_travel_both_params(self, mock_connection):
+        from iceberg_tools import register_iceberg_tools
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        register_iceberg_tools(mcp)
+
+        time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
+        result = time_travel(
+            "my_source",
+            "SELECT * FROM my_source",
+            timestamp="2024-01-01",
+            snapshot_id=123
+        )
+        assert "Specify either timestamp or snapshot_id" in result
+
+    def test_query_iceberg_time_travel_no_params(self, mock_connection):
+        from iceberg_tools import register_iceberg_tools
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        register_iceberg_tools(mcp)
+
+        time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
+        result = time_travel("my_source", "SELECT * FROM my_source")
+        assert "Must specify either timestamp or snapshot_id" in result
+
+    def test_create_iceberg_sink_upsert_no_key(self, mock_connection):
+        from iceberg_tools import register_iceberg_tools
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        register_iceberg_tools(mcp)
+
+        create_sink = get_tool_fn(mcp, "create_iceberg_sink")
+        assert create_sink is not None
+
+        result = create_sink(
+            sink_name="test_sink",
+            source_object="my_mv",
+            warehouse_path="s3://bucket/warehouse",
+            database_name="db",
+            table_name="table",
+            sink_type="upsert"
+        )
+        assert "primary_key is required" in result
+
+    def test_create_iceberg_source(self, mock_connection):
+        from iceberg_tools import register_iceberg_tools
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("test")
+        register_iceberg_tools(mcp)
+
+        create_source = get_tool_fn(mcp, "create_iceberg_source")
+        assert create_source is not None
+
+        result = create_source(
+            source_name="my_iceberg",
+            warehouse_path="s3://bucket/warehouse",
+            database_name="db",
+            table_name="table"
+        )
+        assert "created successfully" in result or "Error" in result
