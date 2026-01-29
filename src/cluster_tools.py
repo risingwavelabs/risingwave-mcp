@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import escape_sql_string
 
 
 def register_cluster_tools(mcp: FastMCP):
@@ -35,7 +36,12 @@ def register_cluster_tools(mcp: FastMCP):
             List of jobs with Id, Statement, and Progress
         """
         rw = setup_risingwave_connection()
-        query = f"SHOW JOBS LIKE '{like_pattern}'" if like_pattern else "SHOW JOBS"
+        if like_pattern:
+            # Escape single quotes in the pattern to prevent SQL injection
+            safe_pattern = escape_sql_string(like_pattern)
+            query = f"SHOW JOBS LIKE '{safe_pattern}'"
+        else:
+            query = "SHOW JOBS"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()

@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import escape_sql_string
 
 
 def register_user_tools(mcp: FastMCP):
@@ -42,7 +43,7 @@ def register_user_tools(mcp: FastMCP):
             User details including privileges
         """
         rw = setup_risingwave_connection()
-        # Use rw_users system catalog which is supported
+        safe_username = escape_sql_string(username)
         query = f"""
         SELECT id,
                name,
@@ -51,7 +52,7 @@ def register_user_tools(mcp: FastMCP):
                create_user as can_create_user,
                can_login
         FROM rw_catalog.rw_users
-        WHERE name = '{username}'
+        WHERE name = '{safe_username}'
         """
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
@@ -72,14 +73,14 @@ def register_user_tools(mcp: FastMCP):
             List of schemas owned by the user
         """
         rw = setup_risingwave_connection()
-        # Get schemas owned by this user
+        safe_username = escape_sql_string(username)
         query = f"""
         SELECT s.id as schema_id,
                s.name as schema_name,
                u.name as owner
         FROM rw_catalog.rw_schemas s
         JOIN rw_catalog.rw_users u ON s.owner = u.id
-        WHERE u.name = '{username}'
+        WHERE u.name = '{safe_username}'
         ORDER BY s.name
         """
         try:
@@ -101,14 +102,14 @@ def register_user_tools(mcp: FastMCP):
             List of databases owned by the user
         """
         rw = setup_risingwave_connection()
-        # Get databases owned by this user
+        safe_username = escape_sql_string(username)
         query = f"""
         SELECT d.id as database_id,
                d.name as database_name,
                u.name as owner
         FROM rw_catalog.rw_databases d
         JOIN rw_catalog.rw_users u ON d.owner = u.id
-        WHERE u.name = '{username}'
+        WHERE u.name = '{safe_username}'
         ORDER BY d.name
         """
         try:

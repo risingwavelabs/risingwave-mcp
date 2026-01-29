@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import is_valid_identifier
 
 
 def register_dml_tools(mcp: FastMCP):
@@ -38,10 +39,13 @@ def register_dml_tools(mcp: FastMCP):
 
     @mcp.tool
     def update_rows(table_name: str, set_clause: str, where_clause: str = None,
-                    returning_columns: str = None) -> str:
+                    returning_columns: str = None, confirm_no_where: bool = False) -> str:
         """
         Update rows in a table.
-        Note: Cannot modify primary key columns. Call FLUSH after to persist changes.
+        Note: Cannot modify primary key columns.
+
+        WARNING: This tool accepts raw SQL clauses which could be used for SQL injection.
+        Only use with trusted input.
 
         Args:
             table_name: Name of the table to update
@@ -49,11 +53,20 @@ def register_dml_tools(mcp: FastMCP):
             where_clause: Optional condition to filter rows (e.g., "id = 5")
                          If omitted, ALL rows will be updated!
             returning_columns: Optional columns to return (e.g., "id, city")
+            confirm_no_where: Must be True to update all rows without a WHERE clause
 
         Returns:
             Success message or returned rows if RETURNING specified
         """
         rw = setup_risingwave_connection()
+
+        if not is_valid_identifier(table_name):
+            return f"Error: Invalid table name: '{table_name}'"
+
+        # Safety check for mass updates
+        if where_clause is None and not confirm_no_where:
+            return ("Error: No WHERE clause specified. This would update ALL rows in the table. "
+                    "Set confirm_no_where=True to proceed with updating all rows.")
 
         # Build query
         query = f"UPDATE {table_name} SET {set_clause}"
@@ -65,7 +78,6 @@ def register_dml_tools(mcp: FastMCP):
         try:
             if returning_columns:
                 result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-                # Flush to persist changes
                 rw.execute("FLUSH")
                 return f"Update successful. Returned: {result.to_json()}"
             else:
@@ -77,21 +89,32 @@ def register_dml_tools(mcp: FastMCP):
 
     @mcp.tool
     def delete_rows(table_name: str, where_clause: str = None,
-                    returning_columns: str = None) -> str:
+                    returning_columns: str = None, confirm_no_where: bool = False) -> str:
         """
         Delete rows from a table.
-        Note: Call FLUSH after to persist changes.
+
+        WARNING: This tool accepts raw SQL clauses which could be used for SQL injection.
+        Only use with trusted input.
 
         Args:
             table_name: Name of the table to delete from
             where_clause: Optional condition to filter rows (e.g., "id = 5")
                          If omitted, ALL rows will be deleted!
             returning_columns: Optional columns to return from deleted rows (e.g., "id")
+            confirm_no_where: Must be True to delete all rows without a WHERE clause
 
         Returns:
             Success message or returned rows if RETURNING specified
         """
         rw = setup_risingwave_connection()
+
+        if not is_valid_identifier(table_name):
+            return f"Error: Invalid table name: '{table_name}'"
+
+        # Safety check for mass deletes
+        if where_clause is None and not confirm_no_where:
+            return ("Error: No WHERE clause specified. This would delete ALL rows from the table. "
+                    "Set confirm_no_where=True to proceed with deleting all rows.")
 
         # Build query
         query = f"DELETE FROM {table_name}"
@@ -103,7 +126,6 @@ def register_dml_tools(mcp: FastMCP):
         try:
             if returning_columns:
                 result = rw.fetch(query, format=OutputFormat.DATAFRAME)
-                # Flush to persist changes
                 rw.execute("FLUSH")
                 return f"Delete successful. Returned: {result.to_json()}"
             else:

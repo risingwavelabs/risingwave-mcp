@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import escape_sql_string, is_valid_identifier
 
 
 def register_catalog_tools(mcp: FastMCP):
@@ -19,6 +20,9 @@ def register_catalog_tools(mcp: FastMCP):
             List of constraints including name, type, and enforcement status
         """
         rw = setup_risingwave_connection()
+        # Escape string values to prevent SQL injection
+        safe_table = escape_sql_string(table_name)
+        safe_schema = escape_sql_string(schema_name)
         query = f"""
         SELECT constraint_name,
                constraint_type,
@@ -26,8 +30,8 @@ def register_catalog_tools(mcp: FastMCP):
                initially_deferred,
                enforced
         FROM information_schema.table_constraints
-        WHERE table_name = '{table_name}'
-          AND table_schema = '{schema_name}'
+        WHERE table_name = '{safe_table}'
+          AND table_schema = '{safe_schema}'
         ORDER BY constraint_type, constraint_name
         """
         try:
@@ -48,12 +52,12 @@ def register_catalog_tools(mcp: FastMCP):
             List of views with their definitions
         """
         rw = setup_risingwave_connection()
-        # Use only columns that exist in RisingWave's information_schema.views
+        safe_schema = escape_sql_string(schema_name)
         query = f"""
         SELECT table_name as view_name,
                view_definition
         FROM information_schema.views
-        WHERE table_schema = '{schema_name}'
+        WHERE table_schema = '{safe_schema}'
         ORDER BY table_name
         """
         try:
@@ -74,11 +78,12 @@ def register_catalog_tools(mcp: FastMCP):
             List of all objects with their types
         """
         rw = setup_risingwave_connection()
+        safe_schema = escape_sql_string(schema_name)
         query = f"""
         SELECT table_name as object_name,
                table_type as object_type
         FROM information_schema.tables
-        WHERE table_schema = '{schema_name}'
+        WHERE table_schema = '{safe_schema}'
         ORDER BY table_type, table_name
         """
         try:
@@ -104,9 +109,11 @@ def register_catalog_tools(mcp: FastMCP):
         conditions = []
 
         if object_type:
-            conditions.append(f"objtype = '{object_type}'")
+            safe_type = escape_sql_string(object_type)
+            conditions.append(f"objtype = '{safe_type}'")
         if object_name:
-            conditions.append(f"objname = '{object_name}'")
+            safe_name = escape_sql_string(object_name)
+            conditions.append(f"objname = '{safe_name}'")
 
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -190,6 +197,18 @@ def register_catalog_tools(mcp: FastMCP):
                 catalog_table = f"rw_catalog.{catalog_table}"
             else:
                 return "Error: Only rw_catalog, information_schema, and pg_catalog tables can be queried"
+
+        # Validate catalog_table is a valid identifier to prevent injection
+        if not is_valid_identifier(catalog_table):
+            return f"Error: Invalid catalog table name: '{catalog_table}'"
+
+        # Ensure limit is a valid integer
+        try:
+            limit = int(limit)
+            if limit < 1:
+                limit = 100
+        except (ValueError, TypeError):
+            limit = 100
 
         query = f"SELECT * FROM {catalog_table} LIMIT {limit}"
         try:

@@ -26,7 +26,7 @@ def setup_mcp():
 
 def list_tools(mcp, category=None):
     """List all available tools, optionally filtered by category"""
-    tools = sorted(mcp._tools.values(), key=lambda t: t.name)
+    tools = sorted(mcp._tool_manager._tools.values(), key=lambda t: t.name)
 
     categories = {
         "query": ["run_select_query", "table_row_count", "get_table_stats"],
@@ -101,7 +101,7 @@ def list_tools(mcp, category=None):
 def run_tool(mcp, tool_name, args_json=None):
     """Run a specific tool with optional JSON arguments"""
     tool = None
-    for t in mcp._tools.values():
+    for t in mcp._tool_manager._tools.values():
         if t.name == tool_name:
             tool = t
             break
@@ -177,7 +177,7 @@ def interactive_mode(mcp):
                 print("Usage: help <tool>")
                 continue
             tool_name = parts[1]
-            for t in mcp._tools.values():
+            for t in mcp._tool_manager._tools.values():
                 if t.name == tool_name:
                     print(f"\n{t.name}")
                     print("=" * 40)
@@ -207,10 +207,10 @@ def main():
 
     try:
         mcp = setup_mcp()
-        print(f"✓ Loaded {len(mcp._tools)} tools")
+        print(f"✓ Loaded {len(mcp._tool_manager._tools)} tools")
     except Exception as e:
         print(f"✗ Failed to initialize MCP: {e}")
-        sys.exit(1)
+        raise
 
     if args.list:
         list_tools(mcp, args.category)

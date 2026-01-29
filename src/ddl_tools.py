@@ -1,5 +1,6 @@
 from fastmcp import FastMCP
 from connection import setup_risingwave_connection
+from sql_utils import is_valid_identifier
 
 
 def register_ddl_tools(mcp: FastMCP):
@@ -254,10 +255,16 @@ def register_ddl_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(mv_name):
+            return f"Error: Invalid materialized view name: '{mv_name}'"
         if parallelism.upper() != 'ADAPTIVE' and not parallelism.isdigit():
-            return "Error: parallelism must be 'ADAPTIVE' or a non-negative integer"
+            return "Error: parallelism must be 'ADAPTIVE', '0' (for ADAPTIVE), or a positive integer"
 
-        parallelism_value = parallelism.upper() if parallelism.upper() == 'ADAPTIVE' else parallelism
+        # Map '0' to ADAPTIVE as documented
+        if parallelism == '0' or parallelism.upper() == 'ADAPTIVE':
+            parallelism_value = 'ADAPTIVE'
+        else:
+            parallelism_value = parallelism
         query = f"ALTER MATERIALIZED VIEW {mv_name} SET PARALLELISM = {parallelism_value}"
         try:
             rw.execute(query)
@@ -278,8 +285,10 @@ def register_ddl_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(mv_name):
+            return f"Error: Invalid materialized view name: '{mv_name}'"
         if rate_limit.lower() != 'default' and not rate_limit.isdigit():
-            return "Error: rate_limit must be 'default' or a non-negative integer"
+            return "Error: rate_limit must be 'default' or a non-negative integer (use '0' to pause backfill)"
 
         rate_value = 'default' if rate_limit.lower() == 'default' else rate_limit
         query = f"ALTER MATERIALIZED VIEW {mv_name} SET BACKFILL_RATE_LIMIT = {rate_value}"

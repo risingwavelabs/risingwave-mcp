@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import is_valid_identifier
 
 
 def register_source_tools(mcp: FastMCP):
@@ -19,7 +20,12 @@ def register_source_tools(mcp: FastMCP):
             List of sources as a formatted string
         """
         rw = setup_risingwave_connection()
-        query = f"SHOW SOURCES FROM {schema_name}" if schema_name else "SHOW SOURCES"
+        if schema_name:
+            if not is_valid_identifier(schema_name):
+                return f"Error: Invalid schema name: '{schema_name}'"
+            query = f"SHOW SOURCES FROM {schema_name}"
+        else:
+            query = "SHOW SOURCES"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()
@@ -38,6 +44,8 @@ def register_source_tools(mcp: FastMCP):
             Source structure information
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(source_name):
+            return f"Error: Invalid source name: '{source_name}'"
         query = f"DESCRIBE {source_name}"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
@@ -58,6 +66,8 @@ def register_source_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(source_name):
+            return f"Error: Invalid source name: '{source_name}'"
         # Validate parallelism value
         if parallelism.upper() != 'ADAPTIVE' and not parallelism.isdigit():
             return "Error: parallelism must be 'ADAPTIVE' or a positive integer"
@@ -83,6 +93,8 @@ def register_source_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(source_name):
+            return f"Error: Invalid source name: '{source_name}'"
         # Validate rate_limit value
         if rate_limit.lower() != 'default' and not rate_limit.isdigit():
             return "Error: rate_limit must be 'default' or a positive integer"
@@ -108,6 +120,8 @@ def register_source_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(source_name):
+            return f"Error: Invalid source name: '{source_name}'"
         query = f"ALTER SOURCE {source_name} REFRESH SCHEMA"
         try:
             rw.execute(query)
@@ -128,6 +142,10 @@ def register_source_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(source_name):
+            return f"Error: Invalid source name: '{source_name}'"
+        if not is_valid_identifier(new_name):
+            return f"Error: Invalid new name: '{new_name}'"
         query = f"ALTER SOURCE {source_name} RENAME TO {new_name}"
         try:
             rw.execute(query)
@@ -149,6 +167,8 @@ def register_source_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(source_name):
+            return f"Error: Invalid source name: '{source_name}'"
         if_exists_clause = "IF EXISTS " if if_exists else ""
         cascade_clause = " CASCADE" if cascade else ""
         query = f"DROP SOURCE {if_exists_clause}{source_name}{cascade_clause}"

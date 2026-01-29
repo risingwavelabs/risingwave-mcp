@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import is_valid_identifier
 
 
 def register_sink_tools(mcp: FastMCP):
@@ -18,6 +19,8 @@ def register_sink_tools(mcp: FastMCP):
             Sink structure information
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(sink_name):
+            return f"Error: Invalid sink name: '{sink_name}'"
         query = f"DESCRIBE {sink_name}"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
@@ -38,11 +41,17 @@ def register_sink_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(sink_name):
+            return f"Error: Invalid sink name: '{sink_name}'"
         # Validate parallelism value
         if parallelism.upper() != 'ADAPTIVE' and not parallelism.isdigit():
-            return "Error: parallelism must be 'ADAPTIVE' or a non-negative integer"
+            return "Error: parallelism must be 'ADAPTIVE', '0' (for ADAPTIVE), or a positive integer"
 
-        parallelism_value = parallelism.upper() if parallelism.upper() == 'ADAPTIVE' else parallelism
+        # Map '0' to ADAPTIVE as documented
+        if parallelism == '0' or parallelism.upper() == 'ADAPTIVE':
+            parallelism_value = 'ADAPTIVE'
+        else:
+            parallelism_value = parallelism
         query = f"ALTER SINK {sink_name} SET PARALLELISM = {parallelism_value}"
         try:
             rw.execute(query)
@@ -63,9 +72,11 @@ def register_sink_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(sink_name):
+            return f"Error: Invalid sink name: '{sink_name}'"
         # Validate rate_limit value
         if rate_limit.lower() != 'default' and not rate_limit.isdigit():
-            return "Error: rate_limit must be 'default' or a positive integer"
+            return "Error: rate_limit must be 'default' or a non-negative integer"
 
         rate_value = 'default' if rate_limit.lower() == 'default' else rate_limit
         query = f"ALTER SINK {sink_name} SET SINK_RATE_LIMIT = {rate_value}"
@@ -88,6 +99,10 @@ def register_sink_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(sink_name):
+            return f"Error: Invalid sink name: '{sink_name}'"
+        if not is_valid_identifier(new_name):
+            return f"Error: Invalid new name: '{new_name}'"
         query = f"ALTER SINK {sink_name} RENAME TO {new_name}"
         try:
             rw.execute(query)
@@ -109,6 +124,8 @@ def register_sink_tools(mcp: FastMCP):
             Success or error message
         """
         rw = setup_risingwave_connection()
+        if not is_valid_identifier(sink_name):
+            return f"Error: Invalid sink name: '{sink_name}'"
         if_exists_clause = "IF EXISTS " if if_exists else ""
         cascade_clause = " CASCADE" if cascade else ""
         query = f"DROP SINK {if_exists_clause}{sink_name}{cascade_clause}"
