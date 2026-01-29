@@ -33,9 +33,9 @@ def setup_mcp():
 
 def get_tool(mcp, name):
     """Get a tool function by name"""
-    for tool in mcp._tools.values():
-        if tool.name == name:
-            return tool.fn
+    tool = mcp._tool_manager._tools.get(name)
+    if tool:
+        return tool.fn
     raise ValueError(f"Tool '{name}' not found")
 
 
@@ -321,7 +321,7 @@ def main():
 
     try:
         mcp = setup_mcp()
-        print(f"✓ MCP initialized with {len(mcp._tools)} tools")
+        print(f"✓ MCP initialized with {len(mcp._tool_manager._tools)} tools")
     except Exception as e:
         print(f"✗ Failed to initialize MCP: {e}")
         sys.exit(1)
