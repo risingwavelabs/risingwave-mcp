@@ -39,6 +39,12 @@ def mock_connection(mock_rw):
         yield mock_rw
 
 
+def get_tool_fn(mcp, tool_name):
+    """Helper to get a tool function by name from FastMCP"""
+    tool = mcp._tool_manager._tools.get(tool_name)
+    return tool.fn if tool else None
+
+
 # ==================== Schema Tools Tests ====================
 
 class TestSchemaTools:
@@ -49,13 +55,7 @@ class TestSchemaTools:
         mcp = FastMCP("test")
         register_schema_tools(mcp)
 
-        # Find the tool
-        show_tables = None
-        for tool in mcp._tools.values():
-            if tool.name == "show_tables":
-                show_tables = tool.fn
-                break
-
+        show_tables = get_tool_fn(mcp, "show_tables")
         assert show_tables is not None
         result = show_tables()
         assert "test" in result
@@ -68,12 +68,8 @@ class TestSchemaTools:
         mcp = FastMCP("test")
         register_schema_tools(mcp)
 
-        list_schemas = None
-        for tool in mcp._tools.values():
-            if tool.name == "list_schemas":
-                list_schemas = tool.fn
-                break
-
+        list_schemas = get_tool_fn(mcp, "list_schemas")
+        assert list_schemas is not None
         result = list_schemas()
         assert isinstance(result, str)
 
@@ -88,12 +84,8 @@ class TestSourceTools:
         mcp = FastMCP("test")
         register_source_tools(mcp)
 
-        list_sources = None
-        for tool in mcp._tools.values():
-            if tool.name == "list_sources":
-                list_sources = tool.fn
-                break
-
+        list_sources = get_tool_fn(mcp, "list_sources")
+        assert list_sources is not None
         result = list_sources()
         assert isinstance(result, str)
         mock_connection.fetch.assert_called()
@@ -105,11 +97,8 @@ class TestSourceTools:
         mcp = FastMCP("test")
         register_source_tools(mcp)
 
-        alter_parallelism = None
-        for tool in mcp._tools.values():
-            if tool.name == "alter_source_parallelism":
-                alter_parallelism = tool.fn
-                break
+        alter_parallelism = get_tool_fn(mcp, "alter_source_parallelism")
+        assert alter_parallelism is not None
 
         result = alter_parallelism("my_source", "4")
         assert "parallelism set to 4" in result
@@ -124,11 +113,8 @@ class TestSourceTools:
         mcp = FastMCP("test")
         register_source_tools(mcp)
 
-        alter_parallelism = None
-        for tool in mcp._tools.values():
-            if tool.name == "alter_source_parallelism":
-                alter_parallelism = tool.fn
-                break
+        alter_parallelism = get_tool_fn(mcp, "alter_source_parallelism")
+        assert alter_parallelism is not None
 
         result = alter_parallelism("my_source", "invalid")
         assert "Error" in result
@@ -144,12 +130,8 @@ class TestClusterTools:
         mcp = FastMCP("test")
         register_cluster_tools(mcp)
 
-        show_cluster = None
-        for tool in mcp._tools.values():
-            if tool.name == "show_cluster":
-                show_cluster = tool.fn
-                break
-
+        show_cluster = get_tool_fn(mcp, "show_cluster")
+        assert show_cluster is not None
         result = show_cluster()
         assert isinstance(result, str)
 
@@ -160,11 +142,8 @@ class TestClusterTools:
         mcp = FastMCP("test")
         register_cluster_tools(mcp)
 
-        cancel_jobs = None
-        for tool in mcp._tools.values():
-            if tool.name == "cancel_jobs":
-                cancel_jobs = tool.fn
-                break
+        cancel_jobs = get_tool_fn(mcp, "cancel_jobs")
+        assert cancel_jobs is not None
 
         result = cancel_jobs("1010, 1012")
         assert "cancelled" in result.lower() or "error" in result.lower()
@@ -176,11 +155,8 @@ class TestClusterTools:
         mcp = FastMCP("test")
         register_cluster_tools(mcp)
 
-        cancel_jobs = None
-        for tool in mcp._tools.values():
-            if tool.name == "cancel_jobs":
-                cancel_jobs = tool.fn
-                break
+        cancel_jobs = get_tool_fn(mcp, "cancel_jobs")
+        assert cancel_jobs is not None
 
         result = cancel_jobs("invalid")
         assert "Error" in result
@@ -196,11 +172,8 @@ class TestDDLTools:
         mcp = FastMCP("test")
         register_ddl_tools(mcp)
 
-        create_schema = None
-        for tool in mcp._tools.values():
-            if tool.name == "create_schema":
-                create_schema = tool.fn
-                break
+        create_schema = get_tool_fn(mcp, "create_schema")
+        assert create_schema is not None
 
         result = create_schema("test_schema")
         assert "created successfully" in result
@@ -212,11 +185,8 @@ class TestDDLTools:
         mcp = FastMCP("test")
         register_ddl_tools(mcp)
 
-        alter_mv = None
-        for tool in mcp._tools.values():
-            if tool.name == "alter_mv_parallelism":
-                alter_mv = tool.fn
-                break
+        alter_mv = get_tool_fn(mcp, "alter_mv_parallelism")
+        assert alter_mv is not None
 
         # Valid inputs
         result = alter_mv("my_mv", "4")
@@ -240,11 +210,8 @@ class TestDMLTools:
         mcp = FastMCP("test")
         register_dml_tools(mcp)
 
-        insert_row = None
-        for tool in mcp._tools.values():
-            if tool.name == "insert_single_row":
-                insert_row = tool.fn
-                break
+        insert_row = get_tool_fn(mcp, "insert_single_row")
+        assert insert_row is not None
 
         result = insert_row("test_table", '{"col1": "value1", "col2": 123}')
         assert "inserted successfully" in result or "Error" in result
@@ -256,11 +223,8 @@ class TestDMLTools:
         mcp = FastMCP("test")
         register_dml_tools(mcp)
 
-        insert_row = None
-        for tool in mcp._tools.values():
-            if tool.name == "insert_single_row":
-                insert_row = tool.fn
-                break
+        insert_row = get_tool_fn(mcp, "insert_single_row")
+        assert insert_row is not None
 
         result = insert_row("test_table", 'not valid json')
         assert "Error" in result
@@ -272,11 +236,8 @@ class TestDMLTools:
         mcp = FastMCP("test")
         register_dml_tools(mcp)
 
-        update_rows = None
-        for tool in mcp._tools.values():
-            if tool.name == "update_rows":
-                update_rows = tool.fn
-                break
+        update_rows = get_tool_fn(mcp, "update_rows")
+        assert update_rows is not None
 
         result = update_rows("test_table", "status = 'active'", "id = 1")
         assert "executed successfully" in result or "Error" in result
@@ -288,11 +249,8 @@ class TestDMLTools:
         mcp = FastMCP("test")
         register_dml_tools(mcp)
 
-        delete_rows = None
-        for tool in mcp._tools.values():
-            if tool.name == "delete_rows":
-                delete_rows = tool.fn
-                break
+        delete_rows = get_tool_fn(mcp, "delete_rows")
+        assert delete_rows is not None
 
         result = delete_rows("test_table", "id = 1")
         assert "executed successfully" in result or "Error" in result
@@ -308,14 +266,11 @@ class TestSessionTools:
         mcp = FastMCP("test")
         register_session_tools(mcp)
 
-        set_var = None
-        for tool in mcp._tools.values():
-            if tool.name == "set_session_variable":
-                set_var = tool.fn
-                break
+        set_var = get_tool_fn(mcp, "set_session_variable")
+        assert set_var is not None
 
         result = set_var("query_mode", "local")
-        assert "set to" in result or "Error" in result
+        assert "Successfully set" in result or "Error" in result
 
 
 # ==================== Index Tools Tests ====================
@@ -328,11 +283,8 @@ class TestIndexTools:
         mcp = FastMCP("test")
         register_index_tools(mcp)
 
-        list_indexes = None
-        for tool in mcp._tools.values():
-            if tool.name == "list_indexes":
-                list_indexes = tool.fn
-                break
+        list_indexes = get_tool_fn(mcp, "list_indexes")
+        assert list_indexes is not None
 
         result = list_indexes("test_table")
         assert isinstance(result, str)
@@ -348,11 +300,8 @@ class TestIcebergTools:
         mcp = FastMCP("test")
         register_iceberg_tools(mcp)
 
-        vacuum = None
-        for tool in mcp._tools.values():
-            if tool.name == "vacuum_table":
-                vacuum = tool.fn
-                break
+        vacuum = get_tool_fn(mcp, "vacuum_table")
+        assert vacuum is not None
 
         result = vacuum("iceberg_table")
         assert "completed successfully" in result or "Error" in result
