@@ -6,6 +6,7 @@ from schema_tools import register_schema_tools
 from ddl_tools import register_ddl_tools
 from dml_tools import register_dml_tools
 from management_tools import register_management_tools
+from session_tools import register_session_tools
 from streaming_tools import register_streaming_tools
 from storage_tools import register_storage_tools
 
@@ -25,6 +26,7 @@ def register_tools():
     register_ddl_tools(mcp)
     register_dml_tools(mcp)
     register_management_tools(mcp)
+    register_session_tools(mcp)
     register_streaming_tools(mcp)
     register_storage_tools(mcp)
 
