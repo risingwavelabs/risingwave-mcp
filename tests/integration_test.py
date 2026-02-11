@@ -294,12 +294,48 @@ def test_query_tools(mcp):
         print_result("run_select_query", str(e), False)
 
 
+def test_iceberg_tools(mcp):
+    """Test Iceberg tools"""
+    print("\n🧊 Testing Iceberg Tools...")
+
+    # Test vacuum_table (may fail without actual Iceberg table, but tool should exist)
+    try:
+        result = get_tool(mcp, "vacuum_table")("nonexistent_table")
+        # Expected to fail since table doesn't exist, but tool should work
+        print_result("vacuum_table", result, True)
+    except Exception as e:
+        print_result("vacuum_table", str(e), False)
+
+    # Test get_iceberg_refresh_state
+    try:
+        result = get_tool(mcp, "get_iceberg_refresh_state")()
+        print_result("get_iceberg_refresh_state", result, True)
+    except Exception as e:
+        print_result("get_iceberg_refresh_state", str(e), False)
+
+    # Test time travel validation (without actual Iceberg source)
+    try:
+        time_travel = get_tool(mcp, "query_iceberg_time_travel")
+        result = time_travel("test_source", "SELECT 1", timestamp="2024-01-01")
+        # May error but validates tool exists and runs
+        print_result("query_iceberg_time_travel", result, True)
+    except Exception as e:
+        print_result("query_iceberg_time_travel", str(e), False)
+
+    # Test get_iceberg_snapshots (validates tool exists)
+    try:
+        result = get_tool(mcp, "get_iceberg_snapshots")("test_source")
+        print_result("get_iceberg_snapshots", result, True)
+    except Exception as e:
+        print_result("get_iceberg_snapshots", str(e), False)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Integration tests for RisingWave MCP")
     parser.add_argument("--category", type=str, help="Test specific category",
                        choices=["schema", "source", "sink", "cluster", "management",
                                "session", "streaming", "storage", "catalog", "connection",
-                               "secret", "function", "user", "explain", "query", "all"])
+                               "secret", "function", "user", "explain", "query", "iceberg", "all"])
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
 
@@ -341,6 +377,7 @@ def main():
         "user": test_user_tools,
         "explain": test_explain_tools,
         "query": test_query_tools,
+        "iceberg": test_iceberg_tools,
     }
 
     if category == "all":
