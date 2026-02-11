@@ -313,15 +313,6 @@ def test_iceberg_tools(mcp):
     except Exception as e:
         print_result("get_iceberg_refresh_state", str(e), False)
 
-    # Test time travel validation (without actual Iceberg source)
-    try:
-        time_travel = get_tool(mcp, "query_iceberg_time_travel")
-        result = time_travel("test_source", "SELECT 1", timestamp="2024-01-01")
-        # May error but validates tool exists and runs
-        print_result("query_iceberg_time_travel", result, True)
-    except Exception as e:
-        print_result("query_iceberg_time_travel", str(e), False)
-
     # Test get_iceberg_snapshots (validates tool exists)
     try:
         result = get_tool(mcp, "get_iceberg_snapshots")("test_source")

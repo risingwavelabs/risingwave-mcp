@@ -53,60 +53,6 @@ def register_iceberg_tools(mcp: FastMCP):
             return f"Error running VACUUM FULL: {str(e)}"
 
     @mcp.tool
-    def query_iceberg_time_travel(
-        source_name: str,
-        query: str,
-        timestamp: str = None,
-        snapshot_id: int = None
-    ) -> str:
-        """
-        Query an Iceberg source at a specific point in time (time travel).
-        Use either timestamp or snapshot_id, not both.
-
-        Args:
-            source_name: Name of the Iceberg source
-            query: SELECT query to run (without the FOR SYSTEM_TIME/VERSION clause)
-                   Example: "SELECT * FROM my_source WHERE user_id = 123"
-            timestamp: Query as of this timestamp (e.g., '2024-01-01 12:00:00')
-            snapshot_id: Query as of this specific snapshot ID
-
-        Returns:
-            Query results as JSON or error message
-        """
-        rw = setup_risingwave_connection()
-
-        if not is_valid_identifier(source_name):
-            return f"Error: Invalid source name: '{source_name}'"
-
-        if timestamp and snapshot_id:
-            return "Error: Specify either timestamp or snapshot_id, not both"
-
-        if not timestamp and not snapshot_id:
-            return "Error: Must specify either timestamp or snapshot_id for time travel"
-
-        # Build the time travel query
-        if timestamp:
-            safe_timestamp = escape_sql_string(timestamp)
-            time_travel_clause = f"FOR SYSTEM_TIME AS OF TIMESTAMPTZ '{safe_timestamp}'"
-        else:
-            # Validate snapshot_id is an integer
-            try:
-                snapshot_id = int(snapshot_id)
-            except (ValueError, TypeError):
-                return "Error: snapshot_id must be a valid integer"
-            time_travel_clause = f"FOR SYSTEM_VERSION AS OF {snapshot_id}"
-
-        # Inject the time travel clause after the source name in the query
-        # This is a simple approach - for complex queries, users should construct manually
-        full_query = f"{query} {time_travel_clause}"
-
-        try:
-            result = rw.fetch(full_query, format=OutputFormat.DATAFRAME)
-            return result.to_json()
-        except Exception as e:
-            return f"Error executing time travel query: {str(e)}"
-
-    @mcp.tool
     def get_iceberg_snapshots(source_name: str) -> str:
         """
         Get all snapshots of an Iceberg source.
@@ -320,7 +266,6 @@ WITH (
     ) -> str:
         """
         Create an Iceberg source to read data from an Iceberg table.
-        Supports time travel queries after creation.
 
         Args:
             source_name: Name for the source

@@ -330,50 +330,6 @@ class TestIcebergTools:
         result = get_snapshots("invalid; DROP TABLE")
         assert "Invalid source name" in result
 
-    def test_query_iceberg_time_travel_timestamp(self, mock_connection):
-        from iceberg_tools import register_iceberg_tools
-        from fastmcp import FastMCP
-
-        mcp = FastMCP("test")
-        register_iceberg_tools(mcp)
-
-        time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
-        assert time_travel is not None
-
-        result = time_travel(
-            "my_source",
-            "SELECT * FROM my_source",
-            timestamp="2024-01-01 12:00:00"
-        )
-        assert isinstance(result, str)
-
-    def test_query_iceberg_time_travel_both_params(self, mock_connection):
-        from iceberg_tools import register_iceberg_tools
-        from fastmcp import FastMCP
-
-        mcp = FastMCP("test")
-        register_iceberg_tools(mcp)
-
-        time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
-        result = time_travel(
-            "my_source",
-            "SELECT * FROM my_source",
-            timestamp="2024-01-01",
-            snapshot_id=123
-        )
-        assert "Specify either timestamp or snapshot_id" in result
-
-    def test_query_iceberg_time_travel_no_params(self, mock_connection):
-        from iceberg_tools import register_iceberg_tools
-        from fastmcp import FastMCP
-
-        mcp = FastMCP("test")
-        register_iceberg_tools(mcp)
-
-        time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
-        result = time_travel("my_source", "SELECT * FROM my_source")
-        assert "Must specify either timestamp or snapshot_id" in result
-
     def test_create_iceberg_sink_upsert_no_key(self, mock_connection):
         from iceberg_tools import register_iceberg_tools
         from fastmcp import FastMCP
