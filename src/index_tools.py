@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import validate_identifier
 
 
 def register_index_tools(mcp: FastMCP):
@@ -17,6 +18,10 @@ def register_index_tools(mcp: FastMCP):
         Returns:
             List of indexes with their details (name, key columns, included columns, distribution)
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW INDEXES FROM {table_name}"
         try:
@@ -36,6 +41,10 @@ def register_index_tools(mcp: FastMCP):
         Returns:
             Index structure information
         """
+        try:
+            validate_identifier(index_name, "index_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"DESCRIBE {index_name}"
         try:
@@ -55,6 +64,10 @@ def register_index_tools(mcp: FastMCP):
         Returns:
             CREATE INDEX statement
         """
+        try:
+            validate_identifier(index_name, "index_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE INDEX {index_name}"
         try:
@@ -76,6 +89,10 @@ def register_index_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(index_name, "index_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if_exists_clause = "IF EXISTS " if if_exists else ""
         cascade_clause = " CASCADE" if cascade else ""

@@ -55,7 +55,8 @@ def register_iceberg_tools(mcp: FastMCP):
     @mcp.tool
     def query_iceberg_time_travel(
         source_name: str,
-        query: str,
+        select_columns: str = "*",
+        where_clause: str = None,
         timestamp: str = None,
         snapshot_id: int = None
     ) -> str:
@@ -65,8 +66,8 @@ def register_iceberg_tools(mcp: FastMCP):
 
         Args:
             source_name: Name of the Iceberg source
-            query: SELECT query to run (without the FOR SYSTEM_TIME/VERSION clause)
-                   Example: "SELECT * FROM my_source WHERE user_id = 123"
+            select_columns: Columns to select (default: "*")
+            where_clause: Optional WHERE condition (without the WHERE keyword)
             timestamp: Query as of this timestamp (e.g., '2024-01-01 12:00:00')
             snapshot_id: Query as of this specific snapshot ID
 
@@ -84,21 +85,21 @@ def register_iceberg_tools(mcp: FastMCP):
         if not timestamp and not snapshot_id:
             return "Error: Must specify either timestamp or snapshot_id for time travel"
 
-        # Build the time travel query
+        # Build the time travel clause
         if timestamp:
             safe_timestamp = escape_sql_string(timestamp)
-            time_travel_clause = f"FOR SYSTEM_TIME AS OF TIMESTAMPTZ '{safe_timestamp}'"
+            time_travel_clause = f"FOR SYSTEM_TIME AS OF '{safe_timestamp}'"
         else:
-            # Validate snapshot_id is an integer
             try:
                 snapshot_id = int(snapshot_id)
             except (ValueError, TypeError):
                 return "Error: snapshot_id must be a valid integer"
             time_travel_clause = f"FOR SYSTEM_VERSION AS OF {snapshot_id}"
 
-        # Inject the time travel clause after the source name in the query
-        # This is a simple approach - for complex queries, users should construct manually
-        full_query = f"{query} {time_travel_clause}"
+        # Place the time travel clause right after the table name in FROM
+        full_query = f"SELECT {select_columns} FROM {source_name} {time_travel_clause}"
+        if where_clause:
+            full_query += f" WHERE {where_clause}"
 
         try:
             result = rw.fetch(full_query, format=OutputFormat.DATAFRAME)

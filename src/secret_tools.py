@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import validate_identifier
 
 
 def register_secret_tools(mcp: FastMCP):
@@ -20,7 +21,14 @@ def register_secret_tools(mcp: FastMCP):
             List of secret names (values are hidden)
         """
         rw = setup_risingwave_connection()
-        query = f"SHOW SECRETS FROM {schema_name}" if schema_name else "SHOW SECRETS"
+        if schema_name:
+            try:
+                validate_identifier(schema_name, "schema_name")
+            except ValueError as e:
+                return f"Error: {str(e)}"
+            query = f"SHOW SECRETS FROM {schema_name}"
+        else:
+            query = "SHOW SECRETS"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()
@@ -38,6 +46,10 @@ def register_secret_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(secret_name, "secret_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"DROP SECRET {secret_name}"
         try:

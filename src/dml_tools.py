@@ -1,7 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
-from sql_utils import is_valid_identifier
+from sql_utils import validate_identifier
 
 
 def register_dml_tools(mcp: FastMCP):
@@ -21,6 +21,11 @@ def register_dml_tools(mcp: FastMCP):
             Success or error message
         """
         import json
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         try:
             # Parse the JSON column data
@@ -58,10 +63,11 @@ def register_dml_tools(mcp: FastMCP):
         Returns:
             Success message or returned rows if RETURNING specified
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
-
-        if not is_valid_identifier(table_name):
-            return f"Error: Invalid table name: '{table_name}'"
 
         # Safety check for mass updates
         if where_clause is None and not confirm_no_where:
@@ -106,10 +112,11 @@ def register_dml_tools(mcp: FastMCP):
         Returns:
             Success message or returned rows if RETURNING specified
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
-
-        if not is_valid_identifier(table_name):
-            return f"Error: Invalid table name: '{table_name}'"
 
         # Safety check for mass deletes
         if where_clause is None and not confirm_no_where:
@@ -151,9 +158,23 @@ def register_dml_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
-        rw = setup_risingwave_connection()
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
 
-        query = f"INSERT INTO {schema_name}.{table_name} ({columns}) VALUES {values_list}"
+        # Validate column names - each should be a valid identifier
+        col_names = [c.strip() for c in columns.split(',')]
+        for col in col_names:
+            try:
+                validate_identifier(col, "column")
+            except ValueError as e:
+                return f"Error: {str(e)}"
+
+        rw = setup_risingwave_connection()
+        safe_columns = ", ".join(col_names)
+        query = f"INSERT INTO {schema_name}.{table_name} ({safe_columns}) VALUES {values_list}"
         try:
             rw.execute(query)
             rw.execute("FLUSH")

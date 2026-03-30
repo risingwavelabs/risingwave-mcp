@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import validate_identifier, escape_sql_string
 
 
 def register_schema_tools(mcp: FastMCP):
@@ -24,7 +25,7 @@ def register_schema_tools(mcp: FastMCP):
             result = rw.fetch("SHOW DATABASES", format=OutputFormat.DATAFRAME)
             return result.to_json()
         except Exception as e:
-            return f"Error listing databases: {str(e)}" 
+            return f"Error listing databases: {str(e)}"
 
     @mcp.tool
     def describe_table(table_name: str) -> str:
@@ -37,6 +38,10 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             Table structure information
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"DESCRIBE {table_name}"
         try:
@@ -51,11 +56,15 @@ def register_schema_tools(mcp: FastMCP):
         Describe the structure of a materialized view (columns, types, etc.).
 
         Args:
-            mv_name: Name of the table to describe
+            mv_name: Name of the materialized view to describe
 
         Returns:
-            Table structure information
+            Materialized view structure information
         """
+        try:
+            validate_identifier(mv_name, "mv_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"DESCRIBE {mv_name}"
         try:
@@ -75,6 +84,10 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             CREATE TABLE statement
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE TABLE {table_name}"
         try:
@@ -94,6 +107,10 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             CREATE MATERIALIZED VIEW statement
         """
+        try:
+            validate_identifier(mv_name, "mv_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE MATERIALIZED VIEW {mv_name}"
         try:
@@ -114,6 +131,11 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             Boolean result as string indicating if table exists
         """
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         try:
             exists = rw.check_exist(name=table_name, schema_name=schema_name)
@@ -148,6 +170,10 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             List of materialized views
         """
+        try:
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW MATERIALIZED VIEWS FROM {schema_name}"
         try:
@@ -168,11 +194,13 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             Column details including names, types, and constraints
         """
+        safe_table = escape_sql_string(table_name)
+        safe_schema = escape_sql_string(schema_name)
         rw = setup_risingwave_connection()
         query = f"""
         SELECT column_name, data_type, is_nullable, column_default
-        FROM information_schema.columns 
-        WHERE table_name = '{table_name}' AND table_schema = '{schema_name}'
+        FROM information_schema.columns
+        WHERE table_name = '{safe_table}' AND table_schema = '{safe_schema}'
         ORDER BY ordinal_position
         """
         try:
@@ -192,6 +220,10 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             List of subscriptions
         """
+        try:
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW SUBSCRIPTIONS FROM {schema_name}"
         try:
@@ -212,18 +244,20 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             Table privileges information
         """
+        safe_table = escape_sql_string(table_name)
+        safe_schema = escape_sql_string(schema_name)
         rw = setup_risingwave_connection()
         query = f"""
         SELECT grantee, privilege_type, is_grantable
-        FROM information_schema.table_privileges 
-        WHERE table_name = '{table_name}' AND table_schema = '{schema_name}'
+        FROM information_schema.table_privileges
+        WHERE table_name = '{safe_table}' AND table_schema = '{safe_schema}'
         """
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()
         except Exception as e:
             return f"Error getting table privileges: {str(e)}"
-        
+
     @mcp.tool
     def list_sinks() -> str:
         """
@@ -239,7 +273,7 @@ def register_schema_tools(mcp: FastMCP):
             return result.to_json()
         except Exception as e:
             return f"Error listing sinks: {str(e)}"
-        
+
     @mcp.tool
     def show_create_sink(sink_name: str) -> str:
         """
@@ -250,6 +284,10 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             CREATE SINK statement
         """
+        try:
+            validate_identifier(sink_name, "sink_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE SINK {sink_name}"
         try:
@@ -270,9 +308,8 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             Relation info including schema, type, definition, and timestamps.
         """
+        safe_name = escape_sql_string(relation_name)
         rw = setup_risingwave_connection()
-        # Note: Excludes 'definition' and 'fragments' columns as they can be very large
-        # Use show_create_table/show_create_materialized_view for full definitions
         query = f"""
         SELECT relationid,
                schemaname,
@@ -285,7 +322,7 @@ def register_schema_tools(mcp: FastMCP):
                initialized_at_cluster_version,
                created_at_cluster_version
         FROM rw_catalog.rw_relation_info
-        WHERE relationname = '{relation_name}'
+        WHERE relationname = '{safe_name}'
         """
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
@@ -304,6 +341,10 @@ def register_schema_tools(mcp: FastMCP):
         Returns:
             CREATE SOURCE statement
         """
+        try:
+            validate_identifier(source_name, "source_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE SOURCE {source_name}"
         try:

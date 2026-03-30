@@ -29,11 +29,32 @@ def setup_mcp():
 
 
 def get_tool(mcp, name):
-    """Get a tool function by name"""
-    tool = mcp._tool_manager._tools.get(name)
-    if tool:
-        return tool.fn
-    raise ValueError(f"Tool '{name}' not found")
+    """Get a tool function by name, returns a callable that invokes the tool via MCP"""
+    import asyncio
+
+    # Cache the tool schema for positional arg mapping
+    tools = asyncio.run(mcp.list_tools())
+    tool_schema = None
+    for tool in tools:
+        if tool.name == name:
+            tool_schema = tool
+            break
+    if tool_schema is None:
+        raise ValueError(f"Tool '{name}' not found")
+
+    # Get parameter names from the schema for positional arg mapping
+    param_names = list(tool_schema.parameters.get('properties', {}).keys()) if tool_schema.parameters else []
+
+    def call_tool_compat(*args, **kwargs):
+        # Map positional args to keyword args using schema param names
+        if args:
+            for i, arg in enumerate(args):
+                if i < len(param_names):
+                    kwargs[param_names[i]] = arg
+        result = asyncio.run(mcp.call_tool(name, kwargs))
+        return str(result)
+
+    return call_tool_compat
 
 
 def print_result(test_name, result, success=True):
@@ -316,7 +337,7 @@ def test_iceberg_tools(mcp):
     # Test time travel validation (without actual Iceberg source)
     try:
         time_travel = get_tool(mcp, "query_iceberg_time_travel")
-        result = time_travel("test_source", "SELECT 1", timestamp="2024-01-01")
+        result = time_travel(source_name="test_source", timestamp="2024-01-01")
         # May error but validates tool exists and runs
         print_result("query_iceberg_time_travel", result, True)
     except Exception as e:
@@ -353,8 +374,10 @@ def main():
         os.environ["RISINGWAVE_CONNECTION_STR"] = "postgresql://root:root@localhost:4566/dev"
 
     try:
+        import asyncio
         mcp = setup_mcp()
-        print(f"✓ MCP initialized with {len(mcp._tool_manager._tools)} tools")
+        tools = asyncio.run(mcp.list_tools())
+        print(f"✓ MCP initialized with {len(tools)} tools")
     except Exception as e:
         print(f"✗ Failed to initialize MCP: {e}")
         sys.exit(1)

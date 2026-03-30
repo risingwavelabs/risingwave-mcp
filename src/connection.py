@@ -2,35 +2,44 @@ import os
 from risingwave import RisingWave, RisingWaveConnOptions
 
 
-connection_str = os.getenv("RISINGWAVE_CONNECTION_STR")
+# Cached connection instance
+_rw_instance = None
 
 
-def check_environment_variables():
-    global connection_str
-    if connection_str is None:
-        risingwave_host = os.getenv("RISINGWAVE_HOST")
-        risingwave_user = os.getenv("RISINGWAVE_USER")
-        risingwave_password = os.getenv("RISINGWAVE_PASSWORD")
-        risingwave_port = os.getenv("RISINGWAVE_PORT", "4566")
-        risingwave_database = os.getenv("RISINGWAVE_DATABASE", "dev")
-        risingwave_sslmode = os.getenv("RISINGWAVE_SSLMODE", "require")
-        risingwave_timeout = os.getenv("RISINGWAVE_TIMEOUT", "30")
+def _get_connection_str():
+    """Build connection string from environment variables."""
+    connection_str = os.getenv("RISINGWAVE_CONNECTION_STR")
+    if connection_str:
+        return connection_str
 
-        if not risingwave_host or not risingwave_user or not risingwave_password:
-            raise ValueError(
-                "RISINGWAVE_HOST, RISINGWAVE_USER, and RISINGWAVE_PASSWORD must be set in environment variables")
+    risingwave_host = os.getenv("RISINGWAVE_HOST")
+    risingwave_user = os.getenv("RISINGWAVE_USER")
+    risingwave_password = os.getenv("RISINGWAVE_PASSWORD")
+    risingwave_port = os.getenv("RISINGWAVE_PORT", "4566")
+    risingwave_database = os.getenv("RISINGWAVE_DATABASE", "dev")
+    risingwave_sslmode = os.getenv("RISINGWAVE_SSLMODE", "require")
+    risingwave_timeout = os.getenv("RISINGWAVE_TIMEOUT", "30")
 
-        connection_str = f"postgresql://{risingwave_user}:{risingwave_password}@{risingwave_host}:{risingwave_port}/{risingwave_database}?sslmode={risingwave_sslmode}&connect_timeout={risingwave_timeout}"
+    if not risingwave_host or not risingwave_user or not risingwave_password:
+        raise ValueError(
+            "RISINGWAVE_HOST, RISINGWAVE_USER, and RISINGWAVE_PASSWORD must be set in environment variables")
 
-    return connection_str
+    return (f"postgresql://{risingwave_user}:{risingwave_password}@"
+            f"{risingwave_host}:{risingwave_port}/{risingwave_database}"
+            f"?sslmode={risingwave_sslmode}&connect_timeout={risingwave_timeout}")
 
 
 def setup_risingwave_connection() -> RisingWave:
-    """Set up a connection to the RisingWave database."""
+    """Set up a connection to the RisingWave database, reusing existing connection if possible."""
+    global _rw_instance
+    if _rw_instance is not None:
+        return _rw_instance
+
     try:
-        rw = RisingWave(
-            RisingWaveConnOptions(check_environment_variables())
+        _rw_instance = RisingWave(
+            RisingWaveConnOptions(_get_connection_str())
         )
-        return rw
+        return _rw_instance
     except Exception as e:
+        _rw_instance = None
         raise ValueError(f"Failed to connect to RisingWave: {str(e)}")

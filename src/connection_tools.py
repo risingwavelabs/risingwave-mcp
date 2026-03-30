@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import validate_identifier
 
 
 def register_connection_tools(mcp: FastMCP):
@@ -19,7 +20,14 @@ def register_connection_tools(mcp: FastMCP):
             List of connections with their types and properties
         """
         rw = setup_risingwave_connection()
-        query = f"SHOW CONNECTIONS FROM {schema_name}" if schema_name else "SHOW CONNECTIONS"
+        if schema_name:
+            try:
+                validate_identifier(schema_name, "schema_name")
+            except ValueError as e:
+                return f"Error: {str(e)}"
+            query = f"SHOW CONNECTIONS FROM {schema_name}"
+        else:
+            query = "SHOW CONNECTIONS"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()
@@ -37,6 +45,10 @@ def register_connection_tools(mcp: FastMCP):
         Returns:
             CREATE CONNECTION statement
         """
+        try:
+            validate_identifier(connection_name, "connection_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"SHOW CREATE CONNECTION {connection_name}"
         try:
@@ -60,6 +72,10 @@ def register_connection_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(connection_name, "connection_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if_exists_clause = "IF EXISTS " if if_exists else ""
         cascade_clause = " CASCADE" if cascade else ""

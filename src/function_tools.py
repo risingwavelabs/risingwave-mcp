@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import validate_identifier
 
 
 def register_function_tools(mcp: FastMCP):
@@ -19,7 +20,14 @@ def register_function_tools(mcp: FastMCP):
             List of functions with their names, arguments, return types, language, and server link
         """
         rw = setup_risingwave_connection()
-        query = f"SHOW FUNCTIONS FROM {schema_name}" if schema_name else "SHOW FUNCTIONS"
+        if schema_name:
+            try:
+                validate_identifier(schema_name, "schema_name")
+            except ValueError as e:
+                return f"Error: {str(e)}"
+            query = f"SHOW FUNCTIONS FROM {schema_name}"
+        else:
+            query = "SHOW FUNCTIONS"
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()
@@ -39,6 +47,10 @@ def register_function_tools(mcp: FastMCP):
         Returns:
             CREATE FUNCTION statement
         """
+        try:
+            validate_identifier(function_name, "function_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if argument_types:
             query = f"SHOW CREATE FUNCTION {function_name}({argument_types})"
@@ -67,6 +79,10 @@ def register_function_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(function_name, "function_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if_exists_clause = "IF EXISTS " if if_exists else ""
         cascade_clause = " CASCADE" if cascade else ""

@@ -19,6 +19,8 @@ from user_tools import register_user_tools
 from cluster_tools import register_cluster_tools
 from iceberg_tools import register_iceberg_tools
 from catalog_tools import register_catalog_tools
+from monitoring_tools import register_monitoring_tools
+from docs_tools import register_docs_tools
 
 mcp = FastMCP("Risingwave MCP Server")
 
@@ -84,6 +86,12 @@ def register_tools():
 
     # System catalog query tools
     register_catalog_tools(mcp)
+
+    # Monitoring and diagnostics tools
+    register_monitoring_tools(mcp)
+
+    # Documentation query tools
+    register_docs_tools(mcp)
 
 
 if __name__ == "__main__":

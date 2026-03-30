@@ -1,6 +1,7 @@
 from fastmcp import FastMCP
 from risingwave import OutputFormat
 from connection import setup_risingwave_connection
+from sql_utils import validate_identifier, escape_sql_string
 
 
 def register_streaming_tools(mcp: FastMCP):
@@ -256,7 +257,8 @@ def register_streaming_tools(mcp: FastMCP):
             return f"Error: Invalid object_type '{object_type}'. Must be one of: mv, table, sink, source"
 
         catalog_table = type_to_table[object_type]
-        query = f"SELECT id, name, schema_id FROM {catalog_table} WHERE name = '{name}'"
+        safe_name = escape_sql_string(name)
+        query = f"SELECT id, name, schema_id FROM {catalog_table} WHERE name = '{safe_name}'"
 
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
@@ -425,13 +427,14 @@ def register_streaming_tools(mcp: FastMCP):
 
         catalog_table = type_to_table[job_type]
 
+        safe_job_name = escape_sql_string(job_name)
         query = f"""
         SELECT j.name as job_name, f.fragment_id, f.distribution_type,
                f.upstream_fragment_ids, f.flags, f.parallelism,
                f.max_parallelism, f.parallelism_policy
         FROM {catalog_table} j
         JOIN rw_fragments f ON j.id = f.table_id
-        WHERE j.name = '{job_name}'
+        WHERE j.name = '{safe_job_name}'
         ORDER BY f.fragment_id
         """
         try:
@@ -465,6 +468,7 @@ def register_streaming_tools(mcp: FastMCP):
 
         catalog_table = type_to_table[job_type]
 
+        safe_job_name = escape_sql_string(job_name)
         query = f"""
         SELECT j.name as job_name, f.fragment_id, f.flags,
                a.actor_id, a.state as actor_state,
@@ -473,7 +477,7 @@ def register_streaming_tools(mcp: FastMCP):
         JOIN rw_fragments f ON j.id = f.table_id
         JOIN rw_actors a ON f.fragment_id = a.fragment_id
         JOIN rw_worker_nodes w ON a.worker_id = w.id
-        WHERE j.name = '{job_name}'
+        WHERE j.name = '{safe_job_name}'
         ORDER BY f.fragment_id, a.actor_id
         """
         try:
@@ -639,13 +643,14 @@ def register_streaming_tools(mcp: FastMCP):
             Worker nodes with their actor counts for this MV.
         """
         rw = setup_risingwave_connection()
+        safe_mv_name = escape_sql_string(mv_name)
         query = f"""
         SELECT w.id as worker_id, w.host, count(a.actor_id) as actor_count
         FROM rw_fragments f
         JOIN rw_materialized_views m ON f.table_id = m.id
         JOIN rw_actors a ON f.fragment_id = a.fragment_id
         JOIN rw_worker_nodes w ON a.worker_id = w.id
-        WHERE m.name = '{mv_name}'
+        WHERE m.name = '{safe_mv_name}'
         GROUP BY w.id, w.host
         ORDER BY actor_count DESC
         """
@@ -719,9 +724,11 @@ def register_streaming_tools(mcp: FastMCP):
             ORDER BY id
             """
         elif job_name is not None:
+            safe_job_name = escape_sql_string(job_name)
+            safe_schema_name = escape_sql_string(schema_name)
             query = f"""
             SELECT * FROM rw_internal_table_info
-            WHERE job_name = '{job_name}' AND schema_name = '{schema_name}'
+            WHERE job_name = '{safe_job_name}' AND schema_name = '{safe_schema_name}'
             ORDER BY id
             """
         else:
@@ -736,7 +743,7 @@ def register_streaming_tools(mcp: FastMCP):
     # ==================== Data Distribution Tools ====================
 
     @mcp.tool
-    def check_vnode_distribution(table_name: str, distribution_key: str) -> str:
+    def check_vnode_distribution(table_name: str, distribution_key: str, vnode_count: int = 256) -> str:
         """
         Check vnode distribution for a table to detect data skew.
         WARNING: This performs a full table scan and can be heavy on large tables.
@@ -744,15 +751,19 @@ def register_streaming_tools(mcp: FastMCP):
         Args:
             table_name: Name of the table to check.
             distribution_key: The column used as distribution key.
+            vnode_count: Number of vnodes (default: 256). Check your cluster config if unsure.
 
         Returns:
             Vnode distribution showing count per vnode.
         """
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(distribution_key, "distribution_key")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
-        # rw_vnode requires (vnode_count, distribution_keys...)
-        # Default vnode count in RisingWave is 256
         query = f"""
-        SELECT rw_vnode(256, {distribution_key}) as vnode, count(*) as row_count
+        SELECT rw_vnode({int(vnode_count)}, {distribution_key}) as vnode, count(*) as row_count
         FROM {table_name}
         GROUP BY vnode
         ORDER BY row_count DESC
@@ -779,9 +790,10 @@ def register_streaming_tools(mcp: FastMCP):
             List of dependent materialized views with their definitions.
         """
         rw = setup_risingwave_connection()
+        safe_object_name = escape_sql_string(object_name)
         query = f"""
         WITH obj_oid AS (
-            SELECT oid FROM pg_class WHERE relname = '{object_name}'
+            SELECT oid FROM pg_class WHERE relname = '{safe_object_name}'
         ),
         dependent_oids AS (
             SELECT d.objid AS mv_oid
@@ -813,9 +825,10 @@ def register_streaming_tools(mcp: FastMCP):
             List of upstream tables and MVs with their definitions.
         """
         rw = setup_risingwave_connection()
+        safe_mv_name = escape_sql_string(mv_name)
         query = f"""
         WITH mv_oid AS (
-            SELECT oid FROM pg_class WHERE relname = '{mv_name}'
+            SELECT oid FROM pg_class WHERE relname = '{safe_mv_name}'
         ),
         upstream_oids AS (
             SELECT d.refobjid AS obj_oid
@@ -886,6 +899,10 @@ def register_streaming_tools(mcp: FastMCP):
         Returns:
             The lag duration from the oldest unprocessed record.
         """
+        try:
+            validate_identifier(internal_table_name, "internal_table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         # The kv_log_store_epoch column stores the epoch timestamp
         # Epoch format: upper bits contain timestamp info

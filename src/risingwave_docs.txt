@@ -1,0 +1,1237 @@
+# RisingWave — Complete Reference for AI Agents
+
+> RisingWave is an open-source, PostgreSQL-compatible streaming database for real-time event streaming, processing, and analytics.
+> It uses standard SQL to ingest, transform, and serve streaming data with sub-second freshness.
+> RisingWave is wire-compatible with PostgreSQL — connect using any PostgreSQL driver on port 4566 (default).
+
+## Table of Contents
+
+1. Quick Start & Connection
+2. Architecture
+3. Core Concepts
+4. SQL Commands
+5. Data Types
+6. Functions
+7. Source Connectors
+8. Sink Connectors
+9. Streaming Patterns
+10. Iceberg Integration
+11. Subscriptions
+12. Client Libraries
+13. PostgreSQL Compatibility
+14. Common Pitfalls
+
+---
+
+## 1. Quick Start & Connection
+
+### Default Connection Parameters
+
+- Host: localhost
+- Port: 4566
+- User: root
+- Password: (empty by default)
+- Database: dev
+- Protocol: PostgreSQL wire protocol
+
+### Connection Examples
+
+Python (psycopg2):
+```python
+import psycopg2
+conn = psycopg2.connect(host="127.0.0.1", port=4566, user="root", dbname="dev")
+conn.autocommit = True
+```
+
+Python (SQLAlchemy):
+```python
+from sqlalchemy import create_engine
+engine = create_engine('risingwave+psycopg2://root@localhost:4566/dev')
+```
+
+Java (JDBC):
+```java
+String url = "jdbc:postgresql://localhost:4566/dev";
+Connection conn = DriverManager.getConnection(url, "root", "");
+```
+
+Node.js (pg):
+```javascript
+const { Pool } = require('pg');
+const pool = new Pool({ host: '127.0.0.1', port: 4566, user: 'root', database: 'dev' });
+```
+
+Go (pgx):
+```go
+conn, err := pgx.Connect(context.Background(), "postgres://root@localhost:4566/dev")
+```
+
+### Docker Quick Start
+
+```bash
+docker run -it --pull=always -p 4566:4566 -p 5691:5691 risingwavelabs/risingwave:latest single_node
+```
+
+Connect with psql:
+```bash
+psql -h localhost -p 4566 -d dev -U root
+```
+
+---
+
+## 2. Architecture
+
+RisingWave has 4 node types:
+
+- **Frontend**: Stateless proxy accepting PostgreSQL protocol connections. Handles parsing, optimization, query planning.
+- **ComputeNode**: Executes optimized query plans (both streaming and batch).
+- **MetaServer**: Central metadata management. Manages cluster, stream graphs, catalogs, barriers, storage metadata, and compaction.
+- **Compactor**: Stateless worker for storage compaction tasks.
+
+Storage: Uses object storage (S3, GCS, MinIO, Azure Blob) as primary storage with local SSD/EBS as cache.
+
+Two execution modes:
+- **Batch mode**: Standard SELECT queries answered immediately.
+- **Streaming mode**: CREATE MATERIALIZED VIEW creates a persistent streaming pipeline that incrementally maintains results.
+
+---
+
+## 3. Core Concepts
+
+### SOURCE vs TABLE
+
+- `CREATE SOURCE`: Declares an external data stream. Data is NOT persisted in RisingWave. Cannot INSERT/UPDATE/DELETE. Used for streaming ingestion.
+- `CREATE TABLE` (with connector): Declares an external data stream AND persists data in RisingWave. Supports INSERT/UPDATE/DELETE. Supports primary keys.
+- `CREATE TABLE` (without connector): A regular mutable table. Supports INSERT/UPDATE/DELETE.
+
+When to use which:
+- Use SOURCE when you only need the data in materialized views (not querying raw data directly).
+- Use TABLE with connector when you need to query raw ingested data or need primary key deduplication.
+- Use TABLE without connector for reference/dimension data you manage manually.
+
+### Materialized Views
+
+Materialized views in RisingWave are **continuously and incrementally maintained**. They are NOT like PostgreSQL materialized views that require `REFRESH MATERIALIZED VIEW`.
+
+When upstream data changes, materialized views update automatically within sub-seconds.
+
+You can create materialized views on top of other materialized views (MV-on-MV) to build multi-layer streaming pipelines.
+
+### Sinks
+
+Sinks export data from RisingWave to external systems. A sink can read from a source, table, or materialized view.
+
+### Watermarks
+
+Watermarks track event-time progress in streaming pipelines. They are required for time-windowed computations with `EMIT ON WINDOW CLOSE`.
+
+```sql
+CREATE SOURCE events (
+    event_id INT,
+    event_time TIMESTAMPTZ,
+    payload VARCHAR,
+    WATERMARK FOR event_time AS event_time - INTERVAL '5' SECOND
+) WITH (...) FORMAT PLAIN ENCODE JSON;
+```
+
+---
+
+## 4. SQL Commands
+
+### CREATE SOURCE
+
+```sql
+CREATE SOURCE [ IF NOT EXISTS ] source_name (
+    col_name data_type [ AS generation_expression ],
+    ...
+    [ PRIMARY KEY (col_name, ...) ]
+    [ WATERMARK FOR column_name AS expr ]
+)
+[ INCLUDE { header | key | offset | partition | timestamp } [ AS alias ] ]
+WITH (
+    connector = 'connector_name',
+    connector_parameter = 'value', ...
+)
+FORMAT data_format ENCODE data_encode [ (
+    message = 'message_name',
+    schema.registry = 'url', ...
+) ];
+```
+
+Key notes:
+- INCLUDE clause extracts metadata fields (Kafka key, offset, partition, timestamp, headers)
+- FORMAT options: PLAIN, UPSERT, DEBEZIUM, MAXWELL, CANAL
+- ENCODE options: JSON, AVRO, PROTOBUF, CSV, BYTES
+
+### CREATE TABLE (with connector)
+
+```sql
+CREATE TABLE [ IF NOT EXISTS ] table_name (
+    col_name data_type [ NOT NULL ] [ PRIMARY KEY ] [ DEFAULT expr ] [ AS generation_expression ],
+    ...
+    [ PRIMARY KEY (col_name, ...) ]
+    [ WATERMARK FOR column_name AS expr ]
+)
+[ INCLUDE { header | key | offset | partition | timestamp } [ AS alias ] ]
+[ ON CONFLICT conflict_action ]
+WITH (
+    connector = 'connector_name',
+    connector_parameter = 'value', ...
+)
+FORMAT data_format ENCODE data_encode [ (...) ];
+```
+
+ON CONFLICT options (for upsert behavior):
+- `ON CONFLICT DO UPDATE IF NOT NULL` — update only non-null columns
+- `ON CONFLICT DO UPDATE FULL` — full row replacement
+- `ON CONFLICT IGNORE` — skip duplicates
+- `ON CONFLICT OVERWRITE` — overwrite completely
+
+### CREATE TABLE (without connector)
+
+```sql
+CREATE TABLE [ IF NOT EXISTS ] table_name (
+    col_name data_type [ NOT NULL ] [ PRIMARY KEY ] [ DEFAULT expr ],
+    ...
+    [ PRIMARY KEY (col_name, ...) ]
+)
+[ APPEND ONLY ];
+```
+
+### CREATE MATERIALIZED VIEW
+
+```sql
+CREATE MATERIALIZED VIEW [ IF NOT EXISTS ] mv_name
+[ WITH ( parameter = value [, ... ] ) ]
+AS select_query
+[ EMIT ON WINDOW CLOSE ];
+```
+
+WITH parameters:
+- `source_rate_limit`: Throttle ingestion rate during backfill (rows/second)
+- `backfill_order`: Control backfill sequence: `FIXED(t1 -> t2, t2 -> t3)`
+
+Background DDL:
+```sql
+SET BACKGROUND_DDL = true;
+CREATE MATERIALIZED VIEW mv AS ...;
+```
+
+Check backfill progress:
+```sql
+SELECT * FROM rw_catalog.rw_fragment_backfill_progress;
+```
+
+### CREATE SINK
+
+```sql
+CREATE SINK [ IF NOT EXISTS ] sink_name
+[ FROM source_or_table_or_mv | AS select_query ]
+WITH (
+    connector = 'connector_name',
+    connector_parameter = 'value',
+    [ snapshot = 'true' | 'false' ],
+    [ force_compaction = 'true' | 'false' ], ...
+)
+[ FORMAT data_format ENCODE data_encode [ (...) ] ];
+```
+
+Key parameters:
+- `snapshot = 'false'`: Skip backfilling historical data, only send incremental changes
+- `force_compaction = 'true'`: Buffer and deduplicate updates per key within each barrier interval
+
+### CREATE INDEX
+
+```sql
+CREATE INDEX [ IF NOT EXISTS ] index_name ON table_or_mv_name ( column_name [ ASC | DESC ] [, ...] )
+[ INCLUDE ( column_name [, ...] ) ]
+[ DISTRIBUTED BY ( column_name [, ...] ) ];
+```
+
+### CREATE VIEW
+
+```sql
+CREATE VIEW [ IF NOT EXISTS ] view_name AS select_query;
+```
+
+### CREATE CONNECTION
+
+```sql
+CREATE CONNECTION connection_name WITH (
+    type = 'privatelink',
+    provider = 'aws' | 'gcp',
+    service.name = '...',
+    ...
+);
+```
+
+### CREATE SECRET
+
+```sql
+CREATE SECRET secret_name WITH ( backend = 'meta' ) AS 'secret_value';
+```
+
+Use in connector configs: `password = secret secret_name`
+
+### ALTER Commands
+
+```sql
+ALTER TABLE table_name ADD COLUMN col_name data_type;
+ALTER TABLE table_name DROP COLUMN col_name;
+ALTER TABLE table_name RENAME TO new_name;
+ALTER TABLE table_name OWNER TO new_owner;
+ALTER TABLE table_name SET SCHEMA new_schema;
+ALTER TABLE table_name SET PARALLELISM TO { number | 'ADAPTIVE' };
+ALTER TABLE table_name SET SOURCE_RATE_LIMIT TO { number | DEFAULT };
+
+ALTER MATERIALIZED VIEW mv_name RENAME TO new_name;
+ALTER MATERIALIZED VIEW mv_name OWNER TO new_owner;
+ALTER MATERIALIZED VIEW mv_name SET SCHEMA new_schema;
+ALTER MATERIALIZED VIEW mv_name SET PARALLELISM TO { number | 'ADAPTIVE' };
+
+ALTER SOURCE source_name RENAME TO new_name;
+ALTER SOURCE source_name ADD COLUMN col_name data_type;
+ALTER SOURCE source_name SET SOURCE_RATE_LIMIT TO { number | DEFAULT };
+
+ALTER SINK sink_name RENAME TO new_name;
+ALTER SINK sink_name OWNER TO new_owner;
+ALTER SINK sink_name SET PARALLELISM TO { number | 'ADAPTIVE' };
+```
+
+### DROP Commands
+
+```sql
+DROP SOURCE [ IF EXISTS ] source_name [ CASCADE ];
+DROP TABLE [ IF EXISTS ] table_name [ CASCADE ];
+DROP MATERIALIZED VIEW [ IF EXISTS ] mv_name [ CASCADE ];
+DROP SINK [ IF EXISTS ] sink_name [ CASCADE ];
+DROP VIEW [ IF EXISTS ] view_name [ CASCADE ];
+DROP INDEX [ IF EXISTS ] index_name [ CASCADE ];
+```
+
+CASCADE drops dependent objects (e.g., materialized views on a source).
+
+### Other Useful Commands
+
+```sql
+SHOW SOURCES;
+SHOW TABLES;
+SHOW MATERIALIZED VIEWS;
+SHOW SINKS;
+SHOW COLUMNS FROM table_or_source;
+DESCRIBE table_or_source_or_mv;
+EXPLAIN select_query;
+
+-- Schema management
+CREATE SCHEMA schema_name;
+CREATE DATABASE database_name;
+SET search_path TO schema_name;
+```
+
+---
+
+## 5. Data Types
+
+| Type | Aliases | Description |
+|------|---------|-------------|
+| boolean | bool | true/false |
+| smallint | | 16-bit integer (-32768 to 32767) |
+| integer | int | 32-bit integer |
+| bigint | | 64-bit integer |
+| numeric | decimal | Arbitrary precision (28 decimal digits) |
+| real | float4 | 32-bit floating point |
+| double precision | float8, double | 64-bit floating point |
+| character varying | varchar, string | Variable-length string |
+| bytea | | Binary data (hex format: '\xDe00BeEf') |
+| date | | Calendar date |
+| time | | Time of day (no timezone) |
+| timestamp | | Date and time (no timezone) |
+| timestamptz | timestamp with time zone | Date and time with UTC timezone |
+| interval | | Time span |
+| struct | | Nested record: STRUCT<field_name TYPE, ...> |
+| array | | Ordered list: TYPE[] |
+| map | | Key-value pairs: MAP(KEY_TYPE, VALUE_TYPE) |
+| jsonb | | Binary JSON |
+| vector(n) | | Fixed-length vector for similarity search |
+| rw_int256 | | 256-bit signed integer |
+
+### Type Casting
+
+Use `::type` or `CAST(expr AS type)`:
+```sql
+SELECT '2024-01-01'::date;
+SELECT CAST(123 AS varchar);
+```
+
+Implicit casting chain: smallint -> integer -> bigint -> numeric -> real -> double
+
+### JSONB
+
+```sql
+-- Access
+SELECT data->'key' FROM t;           -- returns jsonb
+SELECT data->>'key' FROM t;          -- returns varchar
+SELECT data->'nested'->'key' FROM t; -- nested access
+
+-- Operators
+SELECT data @> '{"key": "value"}'::jsonb;  -- contains
+SELECT data ? 'key';                        -- key exists
+SELECT data || '{"new": 1}'::jsonb;        -- concatenate
+```
+
+### Array
+
+```sql
+SELECT ARRAY[1, 2, 3];
+SELECT arr[1];              -- 1-based indexing
+SELECT arr[2:4];            -- slice (inclusive)
+SELECT unnest(arr) FROM t;  -- expand to rows
+```
+
+### Struct
+
+```sql
+CREATE TABLE t (info STRUCT<name VARCHAR, age INT>);
+INSERT INTO t VALUES (ROW('Alice', 30));
+SELECT (info).name FROM t;  -- access field
+```
+
+### Vector
+
+```sql
+CREATE TABLE items (embedding vector(3));
+INSERT INTO items VALUES ('[1.0, 2.0, 3.0]');
+
+-- Distance functions
+SELECT embedding <-> '[1.0, 0.0, 0.0]' AS l2_distance FROM items;   -- Euclidean
+SELECT embedding <=> '[1.0, 0.0, 0.0]' AS cos_distance FROM items;  -- Cosine
+SELECT embedding <#> '[1.0, 0.0, 0.0]' AS neg_inner FROM items;     -- Negative inner product
+```
+
+---
+
+## 6. Functions
+
+### Aggregate Functions
+
+- `count(*)`, `count(expr)` — row/value count
+- `sum(expr)` — sum
+- `avg(expr)` — average
+- `min(expr)`, `max(expr)` — minimum/maximum
+- `array_agg(expr [ORDER BY ...])` — collect into array
+- `string_agg(text, delimiter [ORDER BY ...])` — concatenate strings
+- `jsonb_agg(expr [ORDER BY ...])` — collect into JSON array
+- `jsonb_object_agg(key, value)` — collect into JSON object
+- `bool_and(bool)`, `bool_or(bool)` — boolean aggregation
+- `bit_and(int)`, `bit_or(int)` — bitwise aggregation
+- `stddev_pop(expr)`, `stddev_samp(expr)` — standard deviation
+- `var_pop(expr)`, `var_samp(expr)` — variance
+- `first_value(expr ORDER BY ...)` — first value in ordered set
+- `last_value(expr ORDER BY ...)` — last value in ordered set
+- `arg_min(target, ordering)`, `arg_max(target, ordering)` — value at min/max of ordering
+- `approx_count_distinct(expr)` — approximate distinct count (HyperLogLog, append-only only)
+- `approx_percentile(percentile) WITHIN GROUP (ORDER BY col)` — approximate percentile
+- `mode() WITHIN GROUP (ORDER BY col)` — most frequent value
+- `grouping(exprs)` — grouping set bitmask
+
+### Window Functions
+
+```sql
+SELECT
+    row_number() OVER (PARTITION BY col ORDER BY col2),
+    rank() OVER (PARTITION BY col ORDER BY col2),
+    dense_rank() OVER (PARTITION BY col ORDER BY col2),
+    lag(value, offset) OVER (ORDER BY col),
+    lead(value, offset) OVER (ORDER BY col),
+    first_value(value) OVER (ORDER BY col),
+    last_value(value) OVER (ORDER BY col ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+FROM t;
+```
+
+All aggregate functions can also be used as window functions.
+
+### String Functions
+
+- `length(str)`, `char_length(str)` — character count
+- `concat(a, b, ...)` — concatenate (NULL-safe)
+- `concat_ws(sep, a, b, ...)` — concatenate with separator
+- `lower(str)`, `upper(str)` — case conversion
+- `trim(str)`, `ltrim(str)`, `rtrim(str)`, `btrim(str)` — whitespace/character trimming
+- `left(str, n)`, `right(str, n)` — substring from start/end
+- `substr(str, start, length)`, `substring(str, start, length)` — substring
+- `position(substr IN str)` — find position (1-based, 0 if not found)
+- `replace(str, from, to)` — replace all occurrences
+- `split_part(str, delimiter, n)` — extract nth field
+- `regexp_match(str, pattern)` — first regex match
+- `regexp_replace(str, pattern, replacement)` — regex replace
+- `starts_with(str, prefix)` — prefix check
+- `reverse(str)` — reverse string
+- `repeat(str, n)` — repeat n times
+- `lpad(str, len, fill)`, `rpad(str, len, fill)` — pad string
+- `encode(bytea, format)`, `decode(str, format)` — base64/hex encoding
+- `format(fmt, args...)` — printf-style formatting (%s, %I)
+
+### Date/Time Functions
+
+- `now()` — current timestamp with timezone
+- `current_timestamp` — alias for now()
+- `proctime()` — processing time (when record is processed)
+- `date_trunc(precision, timestamp)` — truncate to precision (second, minute, hour, day, week, month, quarter, year)
+- `date_part(field, timestamp)` — extract field as double (year, month, day, hour, minute, second, epoch, dow, doy)
+- `extract(field FROM timestamp)` — extract field as numeric
+- `to_char(timestamp, format)` — format timestamp as string
+- `to_timestamp(epoch_seconds)` — unix epoch to timestamptz
+- `to_timestamp(string, format)` — parse string to timestamptz
+- `to_date(string, format)` — parse string to date
+- `make_date(year, month, day)` — construct date
+- `make_timestamp(y, m, d, h, min, sec)` — construct timestamp
+
+Format patterns: YYYY (year), MM (month), DD (day), HH24 (hour 0-23), MI (minute), SS (second), US (microsecond), TZH:TZM (timezone)
+
+### JSON Functions
+
+- `jsonb_array_elements(jsonb)` — expand JSON array to rows
+- `jsonb_array_elements_text(jsonb)` — expand to text rows
+- `jsonb_array_length(jsonb)` — array length
+- `jsonb_build_array(...)` — construct JSON array
+- `jsonb_build_object(k1, v1, k2, v2, ...)` — construct JSON object
+- `jsonb_each(jsonb)` — expand to key-value rows
+- `jsonb_each_text(jsonb)` — expand to key-text rows
+- `jsonb_extract_path(jsonb, key1, key2, ...)` — nested extraction
+- `jsonb_extract_path_text(jsonb, key1, key2, ...)` — nested extraction as text
+- `jsonb_object_keys(jsonb)` — top-level keys
+- `jsonb_typeof(jsonb)` — type name (object, array, string, number, boolean, null)
+- `jsonb_strip_nulls(jsonb)` — remove null fields
+- `jsonb_set(target, path, new_value)` — set value at path
+- `jsonb_pretty(jsonb)` — pretty-print
+- `jsonb_populate_record(base, jsonb)` — expand to struct
+- `to_jsonb(value)` — convert to JSONB
+- `jsonb_path_exists(target, path)` — JSONPath existence check
+- `jsonb_path_query(target, path)` — JSONPath query
+
+JSON operators: `->` (jsonb), `->>` (text), `#>` (path jsonb), `#>>` (path text), `@>` (contains), `?` (key exists), `||` (concat), `-` (delete key)
+
+### Mathematical Functions
+
+- `abs(x)`, `ceil(x)`, `floor(x)`, `round(x, d)`, `trunc(x, d)`
+- `mod(x, y)`, `power(x, y)`, `sqrt(x)`, `cbrt(x)`
+- `ln(x)`, `log10(x)`, `log(base, x)`, `exp(x)`
+- `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)`
+- `pi()`, `degrees(x)`, `radians(x)`
+- `greatest(a, b, ...)`, `least(a, b, ...)`
+
+### Conditional Functions
+
+- `CASE WHEN cond THEN result [ELSE default] END`
+- `COALESCE(a, b, ...)` — first non-null
+- `NULLIF(a, b)` — null if equal
+- `GREATEST(a, b, ...)`, `LEAST(a, b, ...)`
+
+### Set-Returning Functions
+
+- `generate_series(start, stop [, step])` — integer/timestamp series
+- `range(start, stop [, step])` — like generate_series but excludes end
+- `unnest(array)` — expand array to rows
+
+---
+
+## 7. Source Connectors
+
+### Kafka Source
+
+```sql
+CREATE SOURCE kafka_source (
+    col1 VARCHAR,
+    col2 INT,
+    col3 TIMESTAMPTZ
+)
+WITH (
+    connector = 'kafka',
+    topic = 'my_topic',
+    properties.bootstrap.server = 'broker1:9092,broker2:9092',
+    scan.startup.mode = 'earliest'  -- or 'latest'
+) FORMAT PLAIN ENCODE JSON;
+```
+
+Key Kafka WITH parameters:
+- `connector` = 'kafka' (required)
+- `topic` = 'topic_name' (required)
+- `properties.bootstrap.server` = 'host:port' (required)
+- `scan.startup.mode` = 'earliest' | 'latest' (default: earliest)
+- `scan.startup.timestamp.millis` = unix_ms (overrides startup.mode)
+- `group.id.prefix` = 'prefix' (default: 'rw-consumer')
+
+Kafka with Avro + Schema Registry:
+```sql
+CREATE SOURCE avro_source
+WITH (
+    connector = 'kafka',
+    topic = 'avro_topic',
+    properties.bootstrap.server = 'broker:9092'
+) FORMAT PLAIN ENCODE AVRO (
+    schema.registry = 'http://schema-registry:8081'
+);
+```
+
+Kafka with Protobuf:
+```sql
+CREATE SOURCE proto_source
+WITH (
+    connector = 'kafka',
+    topic = 'proto_topic',
+    properties.bootstrap.server = 'broker:9092'
+) FORMAT PLAIN ENCODE PROTOBUF (
+    message = 'package.MessageName',
+    schema.registry = 'http://schema-registry:8081'
+);
+```
+
+Kafka Upsert (requires INCLUDE KEY and PRIMARY KEY):
+```sql
+CREATE TABLE upsert_table (
+    PRIMARY KEY (rw_key),
+    id INT,
+    name VARCHAR
+)
+INCLUDE KEY AS rw_key
+WITH (
+    connector = 'kafka',
+    topic = 'upsert_topic',
+    properties.bootstrap.server = 'broker:9092'
+) FORMAT UPSERT ENCODE JSON;
+```
+
+Kafka with INCLUDE metadata:
+```sql
+CREATE SOURCE kafka_with_meta (
+    user_id INT,
+    data VARCHAR
+)
+INCLUDE key AS kafka_key
+INCLUDE partition AS kafka_partition
+INCLUDE offset AS kafka_offset
+INCLUDE timestamp AS kafka_timestamp
+WITH (
+    connector = 'kafka',
+    topic = 'my_topic',
+    properties.bootstrap.server = 'broker:9092'
+) FORMAT PLAIN ENCODE JSON;
+```
+
+Kafka Security — SASL/PLAIN:
+```sql
+WITH (
+    connector = 'kafka',
+    topic = 'my_topic',
+    properties.bootstrap.server = 'broker:9092',
+    properties.security.protocol = 'SASL_SSL',
+    properties.sasl.mechanism = 'PLAIN',
+    properties.sasl.username = 'user',
+    properties.sasl.password = 'pass'
+)
+```
+
+Kafka Security — SSL:
+```sql
+WITH (
+    connector = 'kafka',
+    topic = 'my_topic',
+    properties.bootstrap.server = 'broker:9093',
+    properties.security.protocol = 'SSL',
+    properties.ssl.ca.location = '/path/to/ca-cert',
+    properties.ssl.certificate.location = '/path/to/client.pem',
+    properties.ssl.key.location = '/path/to/client.key'
+)
+```
+
+### PostgreSQL CDC Source
+
+```sql
+CREATE TABLE pg_table (
+    id INT PRIMARY KEY,
+    name VARCHAR,
+    updated_at TIMESTAMPTZ
+) WITH (
+    connector = 'postgres-cdc',
+    hostname = 'pg-host',
+    port = '5432',
+    username = 'repl_user',
+    password = 'repl_pass',
+    database.name = 'mydb',
+    schema.name = 'public',
+    table.name = 'my_table',
+    slot.name = 'rw_slot'
+);
+```
+
+Prerequisites: PostgreSQL must have `wal_level = logical` and a replication slot.
+
+### MySQL CDC Source
+
+```sql
+CREATE TABLE mysql_table (
+    id INT PRIMARY KEY,
+    name VARCHAR,
+    updated_at TIMESTAMPTZ
+) WITH (
+    connector = 'mysql-cdc',
+    hostname = 'mysql-host',
+    port = '3306',
+    username = 'repl_user',
+    password = 'repl_pass',
+    database.name = 'mydb',
+    table.name = 'my_table',
+    server.id = '1'
+);
+```
+
+Prerequisites: MySQL must have binlog enabled (`binlog_format = ROW`).
+
+### MongoDB CDC Source
+
+```sql
+CREATE TABLE mongo_table (
+    _id VARCHAR PRIMARY KEY,
+    payload JSONB
+) WITH (
+    connector = 'mongodb-cdc',
+    mongodb.url = 'mongodb://user:pass@host:27017/?replicaSet=rs0',
+    collection.name = 'my_collection'
+);
+```
+
+### S3 Source
+
+```sql
+CREATE SOURCE s3_source (
+    col1 VARCHAR,
+    col2 INT
+) WITH (
+    connector = 's3',
+    s3.region_name = 'us-east-1',
+    s3.bucket_name = 'my-bucket',
+    s3.credentials.access = 'access_key',
+    s3.credentials.secret = 'secret_key',
+    match_pattern = '*.json'
+) FORMAT PLAIN ENCODE JSON;
+```
+
+### Datagen Source (for testing)
+
+```sql
+CREATE SOURCE datagen_source (
+    id INT,
+    name VARCHAR,
+    created_at TIMESTAMPTZ
+) WITH (
+    connector = 'datagen',
+    datagen.rows.per.second = '1000',
+    fields.id.kind = 'sequence',
+    fields.id.start = '1',
+    fields.name.kind = 'random',
+    fields.name.length = '10',
+    fields.created_at.kind = 'random',
+    fields.created_at.max_past = '1d'
+) FORMAT PLAIN ENCODE JSON;
+```
+
+### Other Source Connectors
+
+- **Kinesis**: `connector = 'kinesis'`, params: `stream`, `aws.region`, `aws.credentials.access_key_id`, `aws.credentials.secret_access_key`
+- **Pulsar**: `connector = 'pulsar'`, params: `topic`, `service.url`, `scan.startup.mode`
+- **Google Pub/Sub**: `connector = 'google_pubsub'`, params: `pubsub.subscription`, `pubsub.credentials`
+- **MQTT**: `connector = 'mqtt'`, params: `url`, `topic`, `qos`
+- **NATS / JetStream**: `connector = 'nats'`, params: `server_url`, `subject`, `stream`, `durable_consumer_name`
+- **Iceberg**: `connector = 'iceberg'`, params: `catalog.type`, `catalog.name`, `database.name`, `table.name`, `warehouse.path`, storage credentials
+- **Webhook**: `connector = 'webhook'`, params: `webhook.secret` (optional)
+
+### Supported Formats and Encoding
+
+| FORMAT | ENCODE | Description |
+|--------|--------|-------------|
+| PLAIN | JSON | Plain JSON messages |
+| PLAIN | AVRO | Avro with Schema Registry |
+| PLAIN | PROTOBUF | Protobuf with Schema Registry or file |
+| PLAIN | CSV | CSV format (with/without header) |
+| PLAIN | BYTES | Raw bytes as bytea column |
+| PLAIN | PARQUET | Parquet files (S3) |
+| UPSERT | JSON | Keyed upsert (requires INCLUDE KEY + PRIMARY KEY) |
+| UPSERT | AVRO | Keyed upsert with Avro |
+| DEBEZIUM | JSON | Debezium CDC format |
+| DEBEZIUM | AVRO | Debezium CDC with Avro |
+| MAXWELL | JSON | Maxwell CDC format |
+| CANAL | JSON | Canal CDC format |
+
+---
+
+## 8. Sink Connectors
+
+### Kafka Sink
+
+```sql
+CREATE SINK kafka_sink FROM mv_or_table
+WITH (
+    connector = 'kafka',
+    topic = 'output_topic',
+    properties.bootstrap.server = 'broker:9092',
+    type = 'append-only'  -- or 'upsert'
+) FORMAT PLAIN ENCODE JSON;
+```
+
+For upsert mode, specify `primary_key`:
+```sql
+CREATE SINK kafka_upsert_sink FROM my_mv
+WITH (
+    connector = 'kafka',
+    topic = 'output_topic',
+    properties.bootstrap.server = 'broker:9092',
+    type = 'upsert',
+    primary_key = 'id'
+) FORMAT UPSERT ENCODE JSON;
+```
+
+### Apache Iceberg Sink
+
+```sql
+CREATE SINK iceberg_sink FROM my_mv
+WITH (
+    connector = 'iceberg',
+    type = 'append-only',      -- or 'upsert'
+    warehouse.path = 's3://bucket/warehouse',
+    database.name = 'my_db',
+    table.name = 'my_table',
+    catalog.type = 'glue',     -- or 'rest', 'hive', 'jdbc', 'storage'
+    catalog.name = 'my_catalog',
+    s3.access.key = 'access_key',
+    s3.secret.key = 'secret_key',
+    s3.region = 'us-west-2',
+    create_table_if_not_exists = 'true',
+    partition_by = 'day(event_time)',
+    commit_checkpoint_interval = '60'
+);
+```
+
+Key Iceberg parameters:
+- `type`: 'append-only' or 'upsert'
+- `primary_key`: Required for upsert mode
+- `force_append_only = 'true'`: Convert upsert to append-only (updates become inserts)
+- `create_table_if_not_exists = 'true'`: Auto-create Iceberg table
+- `partition_by`: Iceberg partition transforms (identity, bucket(n), truncate(n), year, month, day, hour)
+- `commit_checkpoint_interval`: How often to commit (default: 60)
+- `is_exactly_once = 'true'`: Exactly-once delivery (default: true)
+- `write_mode`: 'merge-on-read' (default) or 'copy-on-write' (upsert only)
+
+### PostgreSQL Sink
+
+```sql
+CREATE SINK pg_sink FROM my_mv
+WITH (
+    connector = 'jdbc',
+    jdbc.url = 'jdbc:postgresql://pg-host:5432/mydb?user=user&password=pass',
+    table.name = 'target_table',
+    type = 'upsert',
+    primary_key = 'id'
+);
+```
+
+### MySQL Sink
+
+```sql
+CREATE SINK mysql_sink FROM my_mv
+WITH (
+    connector = 'jdbc',
+    jdbc.url = 'jdbc:mysql://mysql-host:3306/mydb?user=user&password=pass',
+    table.name = 'target_table',
+    type = 'upsert',
+    primary_key = 'id'
+);
+```
+
+### ClickHouse Sink
+
+```sql
+CREATE SINK clickhouse_sink FROM my_mv
+WITH (
+    connector = 'clickhouse',
+    type = 'append-only',
+    clickhouse.url = 'http://clickhouse-host:8123',
+    clickhouse.user = 'default',
+    clickhouse.password = '',
+    clickhouse.database = 'default',
+    clickhouse.table = 'target_table'
+);
+```
+
+### Elasticsearch Sink
+
+```sql
+CREATE SINK es_sink FROM my_mv
+WITH (
+    connector = 'elasticsearch',
+    type = 'upsert',
+    primary_key = 'id',
+    index = 'my_index',
+    url = 'http://es-host:9200',
+    username = 'elastic',
+    password = 'pass'
+);
+```
+
+### Redis Sink
+
+```sql
+CREATE SINK redis_sink FROM my_mv
+WITH (
+    connector = 'redis',
+    type = 'upsert',
+    primary_key = 'key_col',
+    redis.url = 'redis://redis-host:6379/'
+) FORMAT PLAIN ENCODE JSON;
+```
+
+### Other Sink Connectors
+
+- **StarRocks**: `connector = 'starrocks'`, params: `starrocks.host`, `starrocks.mysqlport`, `starrocks.httpport`, `starrocks.user`, `starrocks.password`, `starrocks.database`, `starrocks.table`
+- **Doris**: `connector = 'doris'`, params: `doris.url`, `doris.user`, `doris.password`, `doris.database`, `doris.table`
+- **Snowflake**: `connector = 'snowflake'`, params: `snowflake.database`, `snowflake.schema`, `snowflake.pipe`, `snowflake.account_identifier`, `snowflake.role_name`, `s3.*`
+- **BigQuery**: `connector = 'bigquery'`, params: `bigquery.project`, `bigquery.dataset`, `bigquery.table`
+- **Kinesis**: `connector = 'kinesis'`, params: `stream`, `aws.region`, `aws.credentials.access_key_id`, `aws.credentials.secret_access_key`
+- **Pulsar**: `connector = 'pulsar'`, params: `topic`, `service.url`
+- **NATS**: `connector = 'nats'`, params: `server_url`, `subject`
+- **DynamoDB**: `connector = 'dynamodb'`, params: `table`, `dynamodb.region`, `dynamodb.access_key_id`, `dynamodb.secret_access_key`
+- **Cassandra/ScyllaDB**: `connector = 'cassandra'`, params: `cassandra.url`, `cassandra.keyspace`, `cassandra.table`, `cassandra.datacenter`
+- **S3**: `connector = 's3'`, params: `s3.bucket_name`, `s3.region_name`, `s3.credentials.access`, `s3.credentials.secret`, `s3.path`
+- **Delta Lake**: `connector = 'deltalake'`, params: `warehouse.path`, `table.name`, `s3.*`
+
+### Sink Type Reference
+
+- `type = 'append-only'`: Only INSERT operations. Use for logs, events, append-only destinations.
+- `type = 'upsert'`: INSERT + UPDATE + DELETE. Requires `primary_key`. Use for mutable destinations.
+- `force_append_only = 'true'`: Convert upsert stream to append-only (updates become inserts, deletes ignored).
+
+---
+
+## 9. Streaming Patterns
+
+### Time Windows
+
+#### Tumble Windows (fixed, non-overlapping)
+
+```sql
+CREATE MATERIALIZED VIEW hourly_stats AS
+SELECT
+    window_start,
+    window_end,
+    category,
+    COUNT(*) AS event_count,
+    SUM(amount) AS total_amount
+FROM TUMBLE(events, event_time, INTERVAL '1 HOUR')
+GROUP BY window_start, window_end, category;
+```
+
+#### Hop Windows (fixed, overlapping)
+
+```sql
+CREATE MATERIALIZED VIEW sliding_stats AS
+SELECT
+    window_start,
+    window_end,
+    AVG(temperature) AS avg_temp
+FROM HOP(sensor_data, recorded_at, INTERVAL '5 MINUTES', INTERVAL '1 HOUR')
+GROUP BY window_start, window_end;
+```
+
+Parameters: HOP(source, time_col, hop_size, window_size)
+- Each row appears in window_size / hop_size windows
+
+#### Session Windows
+
+```sql
+-- Session windows (batch mode or emit-on-window-close only)
+SELECT
+    user_id,
+    first_value(event_time) OVER (PARTITION BY user_id SESSION WITH GAP INTERVAL '30 MINUTES') AS session_start,
+    COUNT(*) OVER (PARTITION BY user_id SESSION WITH GAP INTERVAL '30 MINUTES') AS events_in_session
+FROM user_events;
+```
+
+### Temporal Filters (time-based data retention)
+
+```sql
+-- Keep only last 7 days of data
+CREATE MATERIALIZED VIEW recent_orders AS
+SELECT * FROM orders
+WHERE order_time > NOW() - INTERVAL '7 DAYS';
+```
+
+Records outside the time range are automatically cleaned up from storage.
+
+```sql
+-- Delay processing by 5 seconds (for late-arriving data)
+CREATE MATERIALIZED VIEW delayed_events AS
+SELECT * FROM events
+WHERE event_time + INTERVAL '5' SECOND < NOW();
+```
+
+### Emit on Window Close
+
+Use `EMIT ON WINDOW CLOSE` for append-only output that only emits final results when the time window closes. Requires watermarks.
+
+```sql
+-- Source with watermark
+CREATE SOURCE events (
+    event_id INT,
+    event_time TIMESTAMPTZ,
+    amount DECIMAL,
+    WATERMARK FOR event_time AS event_time - INTERVAL '10' SECOND
+) WITH (...) FORMAT PLAIN ENCODE JSON;
+
+-- Emit final window result only once
+CREATE MATERIALIZED VIEW hourly_totals AS
+SELECT
+    window_start,
+    SUM(amount) AS total
+FROM TUMBLE(events, event_time, INTERVAL '1 HOUR')
+GROUP BY window_start
+EMIT ON WINDOW CLOSE;
+```
+
+### Top-N Pattern
+
+```sql
+CREATE MATERIALIZED VIEW top_products AS
+SELECT * FROM (
+    SELECT
+        category,
+        product_name,
+        sales,
+        ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC) AS rn
+    FROM product_sales
+) WHERE rn <= 10;
+```
+
+### Streaming Joins
+
+```sql
+-- Regular join (between MV/table/source)
+CREATE MATERIALIZED VIEW enriched_orders AS
+SELECT o.*, c.name AS customer_name, c.email
+FROM orders o
+JOIN customers c ON o.customer_id = c.id;
+
+-- Interval join (time-bounded)
+CREATE MATERIALIZED VIEW matched_events AS
+SELECT a.*, b.*
+FROM stream_a a
+JOIN stream_b b
+ON a.key = b.key
+AND a.event_time BETWEEN b.event_time - INTERVAL '1 HOUR' AND b.event_time + INTERVAL '1 HOUR';
+```
+
+### Deduplication
+
+```sql
+-- Deduplicate by keeping latest record per key
+CREATE MATERIALIZED VIEW deduped AS
+SELECT DISTINCT ON (user_id) *
+FROM events
+ORDER BY user_id, event_time DESC;
+```
+
+### Dynamic Filters
+
+```sql
+-- Filter stream based on a mutable control table
+CREATE MATERIALIZED VIEW filtered_events AS
+SELECT e.*
+FROM events e
+JOIN filter_rules r ON e.category = r.category
+WHERE r.is_active = true;
+```
+
+---
+
+## 10. Iceberg Integration
+
+RisingWave has native Apache Iceberg support for streaming lakehouse architectures.
+
+### Ingest from Iceberg
+
+```sql
+CREATE SOURCE iceberg_source
+WITH (
+    connector = 'iceberg',
+    catalog.type = 'glue',
+    catalog.name = 'my_catalog',
+    database.name = 'my_db',
+    table.name = 'my_table',
+    warehouse.path = 's3://bucket/warehouse',
+    s3.access.key = 'access_key',
+    s3.secret.key = 'secret_key',
+    s3.region = 'us-west-2'
+);
+```
+
+### Deliver to Iceberg
+
+See Iceberg Sink in Section 8.
+
+### Catalog Types
+
+- `glue`: AWS Glue Data Catalog
+- `rest`: RESTful Iceberg catalog (e.g., Tabular, Polaris)
+- `hive`: Hive Metastore
+- `jdbc`: JDBC-based catalog
+- `storage`: File system catalog (no external metastore)
+
+### Table Maintenance
+
+RisingWave supports automatic compaction and snapshot expiration for Iceberg tables:
+
+```sql
+-- Check sink status
+SHOW SINKS;
+DESCRIBE SINK my_iceberg_sink;
+```
+
+---
+
+## 11. Subscriptions
+
+Subscriptions let you consume real-time changes from tables or materialized views without external message brokers.
+
+### Create Subscription
+
+```sql
+CREATE SUBSCRIPTION my_sub FROM my_mv
+WITH (retention = '1D');  -- retain incremental data for 1 day
+```
+
+### Consume Changes
+
+```sql
+-- Declare a cursor
+DECLARE cur SUBSCRIPTION CURSOR FOR my_sub SINCE NOW();
+
+-- Fetch changes (blocking with timeout)
+FETCH NEXT FROM cur WITH (timeout = '5s');
+```
+
+Result includes all table columns plus:
+- `op`: Operation type (Insert, UpdateInsert, UpdateDelete, Delete)
+- `rw_timestamp`: Unix timestamp in milliseconds (use for exactly-once delivery)
+
+### Resume After Restart
+
+```sql
+-- Resume from a specific timestamp (exactly-once)
+DECLARE cur SUBSCRIPTION CURSOR FOR my_sub SINCE 1700000000000;
+```
+
+---
+
+## 12. Client Libraries
+
+RisingWave is PostgreSQL wire-compatible. Use any PostgreSQL driver:
+
+| Language | Recommended Driver | Connection String |
+|----------|-------------------|-------------------|
+| Python | psycopg2 or psycopg3 | `host=127.0.0.1 port=4566 user=root dbname=dev` |
+| Java | JDBC (postgresql) | `jdbc:postgresql://localhost:4566/dev` |
+| Node.js | pg | `{ host: '127.0.0.1', port: 4566, user: 'root', database: 'dev' }` |
+| Go | pgx | `postgres://root@localhost:4566/dev` |
+| Ruby | pg | `PG.connect(host: '127.0.0.1', port: 4566, dbname: 'dev', user: 'root')` |
+| Rust | tokio-postgres | `host=127.0.0.1 port=4566 user=root dbname=dev` |
+| C# | Npgsql | `Host=127.0.0.1;Port=4566;Username=root;Database=dev` |
+| PHP | pdo-pgsql | `pgsql:host=127.0.0.1;port=4566;dbname=dev` |
+
+SQLAlchemy dialect: `risingwave+psycopg2://root@localhost:4566/dev`
+
+Python SDK (`risingwave-py`): Event-driven Python SDK for RisingWave with higher-level abstractions.
+
+---
+
+## 13. PostgreSQL Compatibility
+
+### Supported
+
+- SELECT with WHERE, GROUP BY, HAVING, ORDER BY, LIMIT, OFFSET
+- JOINs: INNER, LEFT, RIGHT, FULL OUTER, CROSS, LATERAL
+- Subqueries (correlated and uncorrelated)
+- CTEs (WITH clause)
+- Window functions
+- UNION, INTERSECT, EXCEPT
+- INSERT, UPDATE, DELETE (on tables)
+- Transactions (BEGIN, COMMIT, ROLLBACK) — limited scope
+- Most data types (see Data Types section)
+- Most scalar, aggregate, and window functions
+- COPY FROM/TO
+- EXPLAIN
+- Prepared statements
+- PostgreSQL wire protocol
+
+### NOT Supported
+
+- Stored procedures / PL/pgSQL
+- Triggers
+- Server-side cursors (DECLARE CURSOR for regular queries)
+- LISTEN / NOTIFY
+- Full-text search (tsvector, tsquery)
+- Advisory locks
+- Table inheritance
+- TEMPORARY tables
+- GENERATED ALWAYS AS IDENTITY (use DEFAULT instead)
+- LATERAL subqueries in some streaming contexts
+- Some PostgreSQL-specific extensions (PostGIS, etc.)
+
+### Behavioral Differences
+
+- Materialized views are incrementally maintained (streaming), NOT on-demand REFRESH
+- Default port is 4566 (not 5432)
+- Default user is `root` (not `postgres`)
+- Default database is `dev` (not `postgres`)
+- `NOW()` in streaming queries is evaluated at barrier time, not query time
+- `SERIAL` type is not supported — use explicit sequences or application-generated IDs
+
+---
+
+## 14. Common Pitfalls
+
+### 1. Using REFRESH MATERIALIZED VIEW
+RisingWave materialized views refresh automatically. Do NOT use `REFRESH MATERIALIZED VIEW` — it doesn't exist in RisingWave.
+
+### 2. Forgetting PRIMARY KEY for Upsert Sources
+When using FORMAT UPSERT, you must:
+1. Add `INCLUDE KEY AS key_col`
+2. Define `PRIMARY KEY (key_col)`
+
+### 3. Trying UPDATE/DELETE on Sources
+Sources are read-only streams. Use `CREATE TABLE` (with connector) if you need mutability, or create a materialized view to transform the data.
+
+### 4. Wrong Port
+RisingWave default port is 4566, not PostgreSQL's 5432.
+
+### 5. Missing Watermark for Window Close
+`EMIT ON WINDOW CLOSE` requires a watermark defined on the source. Without it, the query will fail.
+
+### 6. Connector Parameter Placement
+Put connector parameters in WITH clause, format parameters in FORMAT/ENCODE clause. Don't mix them up:
+```sql
+-- CORRECT
+WITH (connector = 'kafka', topic = '...', properties.bootstrap.server = '...')
+FORMAT PLAIN ENCODE AVRO (schema.registry = 'http://...')
+
+-- WRONG: schema.registry does not go in WITH clause
+```
+
+### 7. Expecting Batch Semantics in Streaming
+Aggregations without GROUP BY in materialized views produce a single continuously-updated row, not a one-time result. This is expected behavior.
+
+### 8. Not Using CASCADE on DROP
+If a source has dependent materialized views, `DROP SOURCE source_name` will fail. Use `DROP SOURCE source_name CASCADE` to drop dependents too.
+
+### 9. Using Unsupported PostgreSQL Features
+Don't use: stored procedures, triggers, LISTEN/NOTIFY, full-text search, temp tables, advisory locks. These are not available in RisingWave.
+
+### 10. Timestamptz Display Format
+Timestamptz values in sinks use ISO 8601 format by default (`2023-11-11T18:30:09.453000Z`). Configure `timestamptz.handling.mode` if your downstream expects a different format.

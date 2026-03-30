@@ -1,6 +1,6 @@
 from fastmcp import FastMCP
 from connection import setup_risingwave_connection
-from sql_utils import is_valid_identifier
+from sql_utils import validate_identifier, escape_sql_string
 
 
 def register_ddl_tools(mcp: FastMCP):
@@ -20,6 +20,10 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if_not_exists_clause = "IF NOT EXISTS " if if_not_exists else ""
         query = f"CREATE SCHEMA {if_not_exists_clause}{schema_name}"
@@ -44,6 +48,10 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if_exists_clause = "IF EXISTS " if if_exists else ""
         cascade_clause = " CASCADE" if cascade else ""
@@ -69,6 +77,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(column_name, "column_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         default_clause = f" DEFAULT {default_value}" if default_value else ""
         query = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {data_type}{default_clause}"
@@ -92,6 +105,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(column_name, "column_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if_exists_clause = "IF EXISTS " if if_exists else ""
         query = f"ALTER TABLE {table_name} DROP COLUMN {if_exists_clause}{column_name}"
@@ -113,6 +131,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(new_name, "new_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"ALTER TABLE {table_name} RENAME TO {new_name}"
         try:
@@ -133,6 +156,10 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if parallelism.upper() != 'ADAPTIVE' and not parallelism.isdigit():
             return "Error: parallelism must be 'ADAPTIVE' or a positive integer"
@@ -157,6 +184,10 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         if rate_limit.lower() != 'default' and not rate_limit.isdigit():
             return "Error: rate_limit must be 'default' or a positive integer"
@@ -184,6 +215,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success message
         """
+        try:
+            validate_identifier(name, "name")
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         try:
             rw.mv(name=name, stmt=sql_statement, schema_name=schema_name)
@@ -203,6 +239,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(name, "name")
+            validate_identifier(schema_name, "schema_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         try:
             query = f"DROP MATERIALIZED VIEW {schema_name}.{name}"
@@ -227,13 +268,7 @@ def register_ddl_tools(mcp: FastMCP):
         allowed_ddl = ['CREATE', 'ALTER', 'DROP', 'TRUNCATE']
 
         if not any(sql_upper.startswith(keyword) for keyword in allowed_ddl):
-            raise ValueError(
-                "Only DDL statements (CREATE, ALTER, DROP, TRUNCATE) are allowed")
-
-        # Additional security: prevent dangerous operations
-        dangerous_keywords = ['DROP DATABASE', 'DROP SCHEMA', 'TRUNCATE']
-        if any(keyword in sql_upper for keyword in dangerous_keywords):
-            raise ValueError("Dangerous DDL operations are not allowed")
+            return "Error: Only DDL statements (CREATE, ALTER, DROP, TRUNCATE) are allowed"
 
         rw = setup_risingwave_connection()
         try:
@@ -254,9 +289,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(mv_name, "mv_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
-        if not is_valid_identifier(mv_name):
-            return f"Error: Invalid materialized view name: '{mv_name}'"
         if parallelism.upper() != 'ADAPTIVE' and not parallelism.isdigit():
             return "Error: parallelism must be 'ADAPTIVE', '0' (for ADAPTIVE), or a positive integer"
 
@@ -284,9 +321,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(mv_name, "mv_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
-        if not is_valid_identifier(mv_name):
-            return f"Error: Invalid materialized view name: '{mv_name}'"
         if rate_limit.lower() != 'default' and not rate_limit.isdigit():
             return "Error: rate_limit must be 'default' or a non-negative integer (use '0' to pause backfill)"
 
@@ -310,6 +349,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(mv_name, "mv_name")
+            validate_identifier(new_name, "new_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"ALTER MATERIALIZED VIEW {mv_name} RENAME TO {new_name}"
         try:
@@ -330,6 +374,11 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(mv_name, "mv_name")
+            validate_identifier(target_mv_name, "target_mv_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
         query = f"ALTER MATERIALIZED VIEW {mv_name} SWAP WITH {target_mv_name}"
         try:
@@ -341,27 +390,39 @@ def register_ddl_tools(mcp: FastMCP):
     # ==================== General DDL Operations ====================
 
     @mcp.tool
-    def create_kafka_table(name: str, columns: str, topic: str) -> str:
+    def create_kafka_table(name: str, columns: str, topic: str,
+                           bootstrap_server: str = "localhost:9092",
+                           format_type: str = "PLAIN",
+                           encode_type: str = "JSON") -> str:
         """
-        Create a table in RisingWave, storing the streaming data from kafka into RisingWave
+        Create a table in RisingWave, storing the streaming data from kafka into RisingWave.
 
         Args:
             name: Name of the table
             columns: Schema/columns of the table (e.g., "id INT, name VARCHAR, timestamp TIMESTAMP")
             topic: Name of kafka topic being sourced from
+            bootstrap_server: Kafka bootstrap server address (default: "localhost:9092")
+            format_type: Data format - PLAIN, UPSERT, DEBEZIUM, etc. (default: "PLAIN")
+            encode_type: Encoding - JSON, AVRO, PROTOBUF, CSV, BYTES (default: "JSON")
 
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(name, "name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
+        safe_topic = escape_sql_string(topic)
+        safe_server = escape_sql_string(bootstrap_server)
         try:
             query = f"""CREATE TABLE IF NOT EXISTS {name} (
             {columns}
             ) WITH (
                 connector='kafka',
-                topic='{topic}',
-                properties.bootstrap.server='localhost:9092'
-            ) FORMAT PLAIN ENCODE JSON;"""
+                topic='{safe_topic}',
+                properties.bootstrap.server='{safe_server}'
+            ) FORMAT {format_type} ENCODE {encode_type};"""
             rw.execute(query)
             return f"Kafka table '{name}' created successfully for topic '{topic}'"
         except Exception as e:
@@ -379,9 +440,12 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
-        # Escape single quotes in comment
-        escaped_comment = comment.replace("'", "''")
+        escaped_comment = escape_sql_string(comment)
         query = f"COMMENT ON TABLE {table_name} IS '{escaped_comment}'"
         try:
             rw.execute(query)
@@ -402,9 +466,13 @@ def register_ddl_tools(mcp: FastMCP):
         Returns:
             Success or error message
         """
+        try:
+            validate_identifier(table_name, "table_name")
+            validate_identifier(column_name, "column_name")
+        except ValueError as e:
+            return f"Error: {str(e)}"
         rw = setup_risingwave_connection()
-        # Escape single quotes in comment
-        escaped_comment = comment.replace("'", "''")
+        escaped_comment = escape_sql_string(comment)
         query = f"COMMENT ON COLUMN {table_name}.{column_name} IS '{escaped_comment}'"
         try:
             rw.execute(query)

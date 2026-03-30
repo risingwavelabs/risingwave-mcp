@@ -114,8 +114,8 @@ def register_cluster_tools(mcp: FastMCP):
                is_serving,
                is_unschedulable,
                rw_version,
-               total_memory_bytes,
-               total_cpu_cores,
+               system_total_memory_bytes,
+               system_total_cpu_cores,
                started_at
         FROM rw_catalog.rw_worker_nodes
         ORDER BY type, id

@@ -41,8 +41,12 @@ def mock_connection(mock_rw):
 
 def get_tool_fn(mcp, tool_name):
     """Helper to get a tool function by name from FastMCP"""
-    tool = mcp._tool_manager._tools.get(tool_name)
-    return tool.fn if tool else None
+    import asyncio
+    try:
+        tool = asyncio.run(mcp.get_tool(tool_name))
+        return tool.fn if tool else None
+    except Exception:
+        return None
 
 
 # ==================== Schema Tools Tests ====================
@@ -341,8 +345,7 @@ class TestIcebergTools:
         assert time_travel is not None
 
         result = time_travel(
-            "my_source",
-            "SELECT * FROM my_source",
+            source_name="my_source",
             timestamp="2024-01-01 12:00:00"
         )
         assert isinstance(result, str)
@@ -356,8 +359,7 @@ class TestIcebergTools:
 
         time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
         result = time_travel(
-            "my_source",
-            "SELECT * FROM my_source",
+            source_name="my_source",
             timestamp="2024-01-01",
             snapshot_id=123
         )
@@ -371,7 +373,7 @@ class TestIcebergTools:
         register_iceberg_tools(mcp)
 
         time_travel = get_tool_fn(mcp, "query_iceberg_time_travel")
-        result = time_travel("my_source", "SELECT * FROM my_source")
+        result = time_travel(source_name="my_source")
         assert "Must specify either timestamp or snapshot_id" in result
 
     def test_create_iceberg_sink_upsert_no_key(self, mock_connection):
