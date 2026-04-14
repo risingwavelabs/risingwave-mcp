@@ -17,6 +17,14 @@
 
 ## Installation
 
+### Option 1: Docker (Recommended)
+
+```bash
+docker pull risingwavelabs/risingwave-mcp-server:0.1.0
+```
+
+### Option 2: From Source
+
 ```bash
 git clone https://github.com/risingwavelabs/risingwave-mcp.git
 cd risingwave-mcp
@@ -136,6 +144,34 @@ You can also spin up a free-tier cluster in seconds:
 2. Restart Claude Desktop to apply changes.
 
 ---
+
+### Docker
+
+Run the MCP server as a container with HTTP transport:
+
+```bash
+docker run -p 8000:8000 \
+  -e RISINGWAVE_CONNECTION_STR="postgresql://root:root@host.docker.internal:4566/dev" \
+  risingwavelabs/risingwave-mcp-server:0.1.0
+```
+
+The server listens on `http://localhost:8000/mcp` by default. You can configure it with environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_TRANSPORT` | `streamable-http` | Transport protocol (`streamable-http`, `sse`, `stdio`) |
+| `MCP_HOST` | `0.0.0.0` | Listen address |
+| `MCP_PORT` | `8000` | Listen port |
+
+#### Verify It Works
+
+```bash
+# Check the server is running
+curl -s http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+```
 
 ### Manual Testing (Dev / CI)
 
