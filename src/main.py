@@ -1,3 +1,5 @@
+import os
+
 from fastmcp import FastMCP
 from explain import explain_analyze, explain_query, explain_distsql
 
@@ -96,4 +98,10 @@ def register_tools():
 
 if __name__ == "__main__":
     register_tools()
-    mcp.run(transport="stdio")
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    host = os.getenv("MCP_HOST", "127.0.0.1")
+    port = int(os.getenv("MCP_PORT", "8000"))
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport=transport, host=host, port=port)

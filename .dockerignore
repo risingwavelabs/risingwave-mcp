@@ -1,0 +1,11 @@
+venv
+.venv
+.vscode/
+.env
+__pycache__
+*.pyc
+.git
+.gitignore
+tests/
+*.md
+LICENSE
