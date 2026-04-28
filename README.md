@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/risingwavelabs-risingwave-mcp-badge.png)](https://mseep.ai/app/risingwavelabs-risingwave-mcp)
+
 # RisingWave MCP Server
 
 **RisingWave MCP Server** is a comprehensive [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server that lets you query and manage your [RisingWave](https://risingwave.com) streaming database using natural language through AI assistants like VS Code Copilot and Claude Desktop.
