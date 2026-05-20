@@ -123,7 +123,7 @@ def register_cluster_tools(mcp: FastMCP):
         try:
             result = rw.fetch(query, format=OutputFormat.DATAFRAME)
             return result.to_json()
-        except Exception as e:
+        except Exception:
             # Fall back to SHOW CLUSTER if the catalog query fails
             try:
                 result = rw.fetch("SHOW CLUSTER", format=OutputFormat.DATAFRAME)
