@@ -6,7 +6,7 @@ authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.10"
 fastmcp = "^0.1.0"
 risingwave-py = "^0.1.0"
 
