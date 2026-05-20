@@ -25,6 +25,8 @@ docker pull risingwavelabs/risingwave-mcp-server:0.1.0
 
 ### Option 2: From Source
 
+Requires Python 3.10 or newer.
+
 ```bash
 git clone https://github.com/risingwavelabs/risingwave-mcp.git
 cd risingwave-mcp
