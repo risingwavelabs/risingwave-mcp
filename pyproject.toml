@@ -13,3 +13,9 @@ risingwave-py = "^0.1.0"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+target-version = "py310"
+# When opening a PR, run `ruff check src/` locally. CI also enforces this on
+# every supported Python version, but catching version-specific syntax issues
+# early in the editor / pre-push is much cheaper than waiting on CI.
