@@ -297,9 +297,10 @@ def register_iceberg_tools(mcp: FastMCP):
         if s3_secret_key:
             params.append(f"s3.secret.key = '{escape_sql_string(s3_secret_key)}'")
 
+        params_sql = ",\n    ".join(params)
         query = f"""CREATE SINK {sink_name} FROM {source_object}
 WITH (
-    {',\n    '.join(params)}
+    {params_sql}
 )"""
 
         try:
@@ -357,9 +358,10 @@ WITH (
         if s3_secret_key:
             params.append(f"s3.secret.key = '{escape_sql_string(s3_secret_key)}'")
 
+        params_sql = ",\n    ".join(params)
         query = f"""CREATE SOURCE {source_name}
 WITH (
-    {',\n    '.join(params)}
+    {params_sql}
 )"""
 
         try:
