@@ -20,8 +20,29 @@
 ### Option 1: Docker (Recommended)
 
 ```bash
-docker pull risingwavelabs/risingwave-mcp-server:0.1.0
+docker pull risingwavelabs/risingwave-mcp-server:0.1.1
 ```
+
+### Option 1b: MCP Registry
+
+The server is listed in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.risingwavelabs/risingwave-mcp) as `io.github.risingwavelabs/risingwave-mcp`. Hosts that install from the registry run the Docker image over stdio; set `RISINGWAVE_CONNECTION_STR` when prompted. The equivalent manual configuration for Claude Desktop is:
+
+```json
+{
+  "mcpServers": {
+    "risingwave": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm",
+               "-e", "RISINGWAVE_CONNECTION_STR",
+               "-e", "MCP_TRANSPORT=stdio",
+               "docker.io/risingwavelabs/risingwave-mcp-server:0.1.1"],
+      "env": { "RISINGWAVE_CONNECTION_STR": "postgresql://root:root@host.docker.internal:4566/dev" }
+    }
+  }
+}
+```
+
+Use a RisingWave user that has only the privileges the agent needs (for example `SELECT` on a few materialized views); the server exposes DDL and DML tools, and the database user is what bounds them.
 
 ### Option 2: From Source
 
@@ -154,7 +175,7 @@ Run the MCP server as a container with HTTP transport:
 ```bash
 docker run -p 8000:8000 \
   -e RISINGWAVE_CONNECTION_STR="postgresql://root:root@host.docker.internal:4566/dev" \
-  risingwavelabs/risingwave-mcp-server:0.1.0
+  risingwavelabs/risingwave-mcp-server:0.1.1
 ```
 
 The server listens on `http://localhost:8000/mcp` by default. You can configure it with environment variables:
@@ -587,3 +608,5 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+<!-- mcp-name: io.github.risingwavelabs/risingwave-mcp -->

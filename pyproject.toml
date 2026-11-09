@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "risingwave-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A RisingWave MCP project using fastmcp and risingwave-py"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
@@ -19,3 +19,10 @@ target-version = "py310"
 # When opening a PR, run `ruff check src/` locally. CI also enforces this on
 # every supported Python version, but catching version-specific syntax issues
 # early in the editor / pre-push is much cheaper than waiting on CI.
+
+[tool.ruff.lint]
+# Pin the rule set to ruff's historical defaults. ruff is installed unpinned
+# in CI, and 0.17 widened its default selection, which turned 400+ pre-existing
+# style findings into CI failures. Widen deliberately, with the fixes, not by
+# accident of whichever ruff version pip resolves.
+select = ["E4", "E7", "E9", "F"]

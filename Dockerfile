@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Ownership marker checked by the MCP Registry (must match server.json "name").
+LABEL io.modelcontextprotocol.server.name="io.github.risingwavelabs/risingwave-mcp"
+
 WORKDIR /app
 
 COPY requirements.txt .
