@@ -1,0 +1,73 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.risingwavelabs/risingwave-mcp",
+  "title": "RisingWave",
+  "description": "Query, inspect and operate RisingWave, the PostgreSQL-compatible streaming database, from an agent.",
+  "repository": {
+    "url": "https://github.com/risingwavelabs/risingwave-mcp",
+    "source": "github",
+    "id": "998029127"
+  },
+  "websiteUrl": "https://risingwave.com/mcp-streaming-database/",
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/risingwavelabs/risingwave-mcp-server:0.1.1",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "description": "The docker subcommand",
+          "value": "run"
+        },
+        {
+          "type": "named",
+          "description": "Keep stdin open so the server can speak stdio",
+          "name": "-i"
+        },
+        {
+          "type": "named",
+          "description": "Remove the container when the host disconnects",
+          "name": "--rm"
+        },
+        {
+          "type": "named",
+          "description": "Pass the RisingWave connection string from the host environment",
+          "name": "-e",
+          "value": "RISINGWAVE_CONNECTION_STR"
+        },
+        {
+          "type": "named",
+          "description": "Use the stdio transport instead of the image default (streamable HTTP)",
+          "name": "-e",
+          "value": "MCP_TRANSPORT=stdio"
+        },
+        {
+          "type": "positional",
+          "description": "The container image to run",
+          "value": "docker.io/risingwavelabs/risingwave-mcp-server:0.1.1",
+          "valueHint": "image_name"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "RISINGWAVE_CONNECTION_STR",
+          "description": "PostgreSQL connection string for RisingWave, e.g. postgresql://user:password@host:4566/dev. Use a user with SELECT on the views the agent may read.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "MCP_TRANSPORT",
+          "description": "Transport the server speaks. The registry package uses stdio; the image defaults to streamable-http.",
+          "value": "stdio",
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
